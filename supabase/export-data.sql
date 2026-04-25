@@ -30,7 +30,7 @@ ORDER BY created_at;
 -- 2. EXPORT EVENTS
 -- =====================================================
 SELECT 
-  'INSERT INTO public.events (id, nama, tipe, created_at) VALUES' as header
+  'INSERT INTO public.events (id, nama, deskripsi, tipe, period_type, created_by, created_at, updated_at) VALUES' as header
 UNION ALL
 SELECT 
   CASE 
@@ -39,8 +39,12 @@ SELECT
   END ||
   '(''' || id || ''', ' ||
   '''' || replace(nama, '''', '''''') || ''', ' ||
+  COALESCE('''' || replace(deskripsi, '''', '''''') || '''', 'NULL') || ', ' ||
   '''' || tipe || ''', ' ||
-  created_at || ')'
+  COALESCE('''' || period_type || '''', 'NULL') || ', ' ||
+  COALESCE('''' || created_by || '''', 'NULL') || ', ' ||
+  created_at || ', ' ||
+  COALESCE(updated_at, created_at) || ')'
 FROM public.events 
 ORDER BY created_at;
 

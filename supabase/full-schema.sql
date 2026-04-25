@@ -25,25 +25,38 @@ create table if not exists public.profiles (
 -- RLS untuk profiles
 alter table public.profiles enable row level security;
 
--- Admin bisa baca/tulis semua profiles
-create policy "Admin full access profiles" on public.profiles
-  for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
-
 -- User bisa baca semua profiles (untuk dropdown, list anggota, dll)
 create policy "Authenticated read profiles" on public.profiles
   for select
   using (auth.uid() is not null);
 
--- User bisa update profil sendiri
+-- User bisa update profil sendiri (nama_lengkap saja)
 create policy "Users can update own profile" on public.profiles
   for update
-  using (auth.uid() = id);
+  using (auth.uid() = id)
+  with check (
+    auth.uid() = id AND 
+    role = (select role from public.profiles where id = auth.uid())
+  );
+
+-- Admin bisa insert profiles baru
+create policy "Admin can insert profiles" on public.profiles
+  for insert
+  with check (
+    public.is_admin() OR
+    -- Allow system/trigger to insert (when auth.uid() is null during user creation)
+    auth.uid() is null
+  );
+
+-- Admin bisa update semua profiles (termasuk role)
+create policy "Admin can update all profiles" on public.profiles
+  for update
+  using (public.is_admin());
+
+-- Admin bisa delete profiles
+create policy "Admin can delete profiles" on public.profiles
+  for delete
+  using (public.is_admin());
 
 -- =====================================================
 -- 2. TABEL EVENTS (Kegiatan absensi)
@@ -53,8 +66,12 @@ create policy "Users can update own profile" on public.profiles
 create table if not exists public.events (
   id text not null primary key,
   nama text not null,
-  tipe text not null check (tipe in ('BULANAN', 'MINGGUAN', 'SEKALI')),
-  created_at bigint not null
+  deskripsi text,
+  tipe text not null check (tipe in ('SEKALI', 'RUTIN')),
+  period_type text check (period_type in ('WEEKLY', 'MONTHLY')),
+  created_by uuid references auth.users(id) on delete set null,
+  created_at bigint not null,
+  updated_at bigint not null
 );
 
 -- RLS untuk events
@@ -63,12 +80,7 @@ alter table public.events enable row level security;
 -- Admin bisa baca/tulis semua events
 create policy "Admin full access events" on public.events
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca events
 create policy "Authenticated read events" on public.events
@@ -94,12 +106,7 @@ alter table public.event_sessions enable row level security;
 -- Admin bisa baca/tulis semua event_sessions
 create policy "Admin full access event_sessions" on public.event_sessions
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca event_sessions
 create policy "Authenticated read event_sessions" on public.event_sessions
@@ -127,12 +134,7 @@ alter table public.attendances enable row level security;
 -- Admin bisa baca/tulis semua attendances
 create policy "Admin full access attendances" on public.attendances
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca attendances
 create policy "Authenticated read attendances" on public.attendances
@@ -160,12 +162,7 @@ alter table public.absensi_members enable row level security;
 -- Admin bisa baca/tulis semua
 create policy "Admin full access absensi_members" on public.absensi_members
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca (untuk filter di halaman absensi)
 create policy "Authenticated read absensi_members" on public.absensi_members
@@ -190,12 +187,7 @@ alter table public.undian_sessions enable row level security;
 -- Admin bisa baca/tulis semua undian_sessions
 create policy "Admin full access undian_sessions" on public.undian_sessions
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca undian_sessions
 create policy "Authenticated read undian_sessions" on public.undian_sessions
@@ -221,12 +213,7 @@ alter table public.undian_members enable row level security;
 -- Admin bisa baca/tulis semua undian_members
 create policy "Admin full access undian_members" on public.undian_members
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca undian_members
 create policy "Authenticated read undian_members" on public.undian_members
@@ -252,12 +239,7 @@ alter table public.undian_results enable row level security;
 -- Admin bisa baca/tulis semua undian_results
 create policy "Admin full access undian_results" on public.undian_results
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca undian_results
 create policy "Authenticated read undian_results" on public.undian_results
@@ -287,12 +269,7 @@ alter table public.books enable row level security;
 -- Admin bisa baca/tulis semua books
 create policy "Admin full access books" on public.books
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca books
 create policy "Authenticated read books" on public.books
@@ -323,12 +300,7 @@ alter table public.txs enable row level security;
 -- Admin bisa baca/tulis semua txs
 create policy "Admin full access txs" on public.txs
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca txs
 create policy "Authenticated read txs" on public.txs
@@ -353,12 +325,7 @@ alter table public.meta enable row level security;
 -- Admin bisa baca/tulis semua meta
 create policy "Admin full access meta" on public.meta
   for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Semua user yang login bisa baca meta
 create policy "Authenticated read meta" on public.meta
@@ -398,8 +365,20 @@ create index if not exists idx_txs_jenis on public.txs(jenis);
 create index if not exists idx_meta_key on public.meta(key);
 
 -- =====================================================
--- 13. FUNCTIONS & TRIGGERS (Opsional)
+-- 13. FUNCTIONS & TRIGGERS
 -- =====================================================
+
+-- Function helper untuk mengecek apakah user adalah admin
+-- Ini mencegah infinite recursion dalam RLS policies
+create or replace function public.is_admin(user_id uuid default auth.uid())
+returns boolean as $$
+begin
+  return exists (
+    select 1 from public.profiles 
+    where id = user_id and role = 'admin'
+  );
+end;
+$$ language plpgsql security definer stable;
 
 -- Function untuk auto-update updated_at pada profiles dan meta
 create or replace function public.handle_updated_at()
@@ -409,6 +388,23 @@ begin
   return new;
 end;
 $$ language plpgsql;
+
+-- Function untuk auto-create profile saat user baru register
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, email, nama_lengkap, role, created_at, updated_at)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'nama_lengkap', new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
+    'member',
+    now(),
+    now()
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
 
 -- Trigger untuk auto-update updated_at pada profiles
 drop trigger if exists on_profiles_updated on public.profiles;
@@ -421,6 +417,12 @@ drop trigger if exists on_meta_updated on public.meta;
 create trigger on_meta_updated
   before update on public.meta
   for each row execute procedure public.handle_updated_at();
+
+-- Trigger untuk auto-create profile saat user baru register
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
 
 -- =====================================================
 -- 14. REALTIME SUBSCRIPTIONS

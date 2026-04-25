@@ -14,7 +14,17 @@
    - Copy paste isi file `full-schema.sql`
    - Jalankan script tersebut
 
-### 2. Export Data dari Supabase Lama
+3. **Sync existing users (jika ada)**
+   - Jika sudah ada user di Authentication tapi belum ada di tabel profiles
+   - Jalankan script `sync-existing-users.sql`
+   - Set role admin untuk user yang diperlukan
+
+4. **Perbaiki tabel events (jika migrasi dari schema lama)**
+   - Jika ada error "could not find created_by column"
+   - Jalankan script `fix-events-table.sql`
+   - Script ini akan menambahkan kolom yang hilang
+
+### 3. Export Data dari Supabase Lama
 
 Jalankan query berikut di SQL Editor Supabase lama untuk export data:
 
@@ -74,7 +84,7 @@ SELECT * FROM public.txs ORDER BY created_at;
 SELECT * FROM public.meta ORDER BY key;
 ```
 
-### 3. Import Data ke Supabase Baru
+### 4. Import Data ke Supabase Baru
 
 #### Cara 1: Menggunakan SQL Insert (Recommended)
 
@@ -95,7 +105,7 @@ INSERT INTO public.profiles (id, email, nama_lengkap, role, created_at, updated_
 4. Klik "Insert" > "Import data from CSV"
 5. Upload file CSV
 
-### 4. Migrasi Users Authentication
+### 5. Migrasi Users Authentication
 
 **PENTING**: User authentication tidak bisa dimigrasikan otomatis. Ada beberapa opsi:
 
@@ -110,7 +120,7 @@ INSERT INTO public.profiles (id, email, nama_lengkap, role, created_at, updated_
 3. Masukkan email dan password sementara
 4. Minta user untuk ganti password
 
-### 5. Update Environment Variables
+### 6. Update Environment Variables
 
 Update file `.env` dengan credentials Supabase baru:
 
@@ -119,7 +129,7 @@ EXPO_PUBLIC_SUPABASE_URL=https://your-new-project.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-new-anon-key
 ```
 
-### 6. Testing Setelah Migrasi
+### 7. Testing Setelah Migrasi
 
 1. **Test Authentication**
    - Login dengan akun admin
@@ -139,7 +149,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your-new-anon-key
    - Tambah catatan kas masuk/keluar
    - Test laporan kas
 
-### 7. Checklist Migrasi
+### 8. Checklist Migrasi
 
 - [ ] Schema SQL berhasil dijalankan
 - [ ] Data profiles berhasil dimigrasikan
@@ -155,7 +165,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your-new-anon-key
 - [ ] Semua fitur berfungsi normal
 - [ ] RLS policies berfungsi dengan benar
 
-### 8. Troubleshooting
+### 9. Troubleshooting
 
 #### Error: "relation does not exist"
 - Pastikan schema SQL sudah dijalankan dengan benar
@@ -165,7 +175,24 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your-new-anon-key
 - Pastikan user admin sudah ada di tabel profiles
 - Check role user sudah diset ke 'admin'
 
-#### Error: "Foreign key constraint"
+#### Error: "could not find created_by column"
+- Jalankan script `fix-events-table.sql` untuk menambahkan kolom yang hilang
+- Error ini terjadi karena tabel events tidak memiliki semua kolom yang dibutuhkan
+- Script akan menambahkan: deskripsi, period_type, created_by, updated_at
+
+#### Error: "infinite recursion detected in policy"
+- Jalankan script `fix-rls-policies.sql` untuk memperbaiki RLS policies
+- Error ini terjadi karena policy admin mengecek tabel profiles dalam loop
+- Script akan membuat function helper `is_admin()` untuk mencegah recursion
+
+#### User tidak muncul di tabel profiles
+- Jalankan script `sync-existing-users.sql` untuk sync user yang sudah ada
+- Pastikan trigger `on_auth_user_created` sudah aktif untuk user baru
+- Manual insert jika diperlukan:
+```sql
+INSERT INTO public.profiles (id, email, nama_lengkap, role) 
+VALUES ('user-uuid', 'user@email.com', 'Nama User', 'member');
+```
 - Import data dengan urutan yang benar:
   1. profiles
   2. events
@@ -179,12 +206,12 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your-new-anon-key
   10. txs (kas)
   11. meta
 
-#### App tidak bisa connect
+#### Error: "Foreign key constraint"
 - Pastikan URL dan anon key sudah benar
 - Restart development server
 - Clear cache aplikasi
 
-### 9. Backup & Rollback Plan
+#### App tidak bisa connect
 
 **Sebelum migrasi:**
 - Backup semua data dari Supabase lama
@@ -196,13 +223,13 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your-new-anon-key
 - Restart aplikasi
 - Investigasi masalah di Supabase baru
 
-### 10. Post-Migration
+### 10. Backup & Rollback Plan
 
-1. **Monitor performa**
+### 11. Post-Migration
    - Check response time query
    - Monitor usage dashboard
 
-2. **Update dokumentasi**
+1. **Monitor performa**
    - Update credentials di dokumentasi tim
    - Update deployment scripts
 

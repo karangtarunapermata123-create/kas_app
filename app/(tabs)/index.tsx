@@ -41,7 +41,7 @@ export default function HomeScreen() {
             Anda belum memiliki buku kas. Silakan buat buku kas pertama Anda.
           </ThemedText>
           <Pressable
-            onPress={() => router.push('/admin')}
+            onPress={() => router.push('/admin/kelola-buku-kas')}
             style={({ pressed }) => [styles.btn, { backgroundColor: tintColor }, pressed && { opacity: 0.8 }]}>
             <ThemedText type="defaultSemiBold" style={{ color: 'white' }}>Buat Buku Kas Pertama</ThemedText>
           </Pressable>
