@@ -13,14 +13,19 @@ import { useKas } from '@/lib/kas/kas-context';
 import { formatRupiah } from '@/lib/kas/types';
 
 export default function HomeScreen() {
-  const { isAdmin } = useAdmin();
+  const { isAdmin, session } = useAdmin();
   const { ready, books, txsAll } = useKas();
   const tintColor = useThemeColor({}, 'tint');
   const backgroundColor = useThemeColor({}, 'background');
   const mutedColor = useThemeColor({}, 'muted');
 
   // Debug info - hapus setelah masalah teratasi
-  console.log('HomeScreen Debug:', { ready, booksCount: books.length, txsCount: txsAll.length });
+  console.log('HomeScreen Debug:', { 
+    ready, 
+    booksCount: books.length, 
+    txsCount: txsAll.length, 
+    hasSession: !!session 
+  });
 
   const bookStats = useMemo(() => {
     const stats: Record<string, { masuk: number; keluar: number; saldo: number }> = {};
@@ -34,8 +39,8 @@ export default function HomeScreen() {
     return stats;
   }, [books, txsAll]);
 
-  // Show loading state while kas context is not ready
-  if (!ready) {
+  // Show loading state while kas context is not ready OR no session
+  if (!ready || !session) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
         <ThemedView style={styles.emptyContainer}>

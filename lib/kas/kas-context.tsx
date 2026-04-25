@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useAdmin } from '@/lib/admin/admin-context';
 import { supabase } from '@/lib/supabase/client';
 import { deleteBookFromDB, deleteTxFromDB, emptyKasStateV2, loadKasState, rowToBook, rowToTx, saveKasState, sortTxsDesc } from './storage';
 import type { KasBook, KasBookType, KasMember, KasState, KasTx, PeriodType } from './types';
@@ -34,12 +35,14 @@ function makeId(prefix: string) {
 }
 
 export function KasProvider({ children }: { children: React.ReactNode }) {
+  const { session } = useAdmin(); // Add dependency on session
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<KasState>(() => emptyKasStateV2());
   const stateRef = useRef(state);
   stateRef.current = state;
 
   const refreshKas = useCallback(async () => {
+    console.log('refreshKas called');
     const loaded = await loadKasState();
     setState({ ...loaded, books: loaded.books, txs: sortTxsDesc(loaded.txs) });
   }, []);
@@ -94,22 +97,38 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const onVisible = async () => { 
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && session) {
+        console.log('Document visible, refreshing kas data');
         await refreshKas();
       }
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [refreshKas]);
+  }, [refreshKas, session]);
 
+  // Reset and reload data when session changes
   useEffect(() => {
+    console.log('Session changed in KasProvider:', !!session);
+    
+    if (!session) {
+      // No session - reset to empty state
+      setState(emptyKasStateV2());
+      setReady(true);
+      return;
+    }
+
+    // Session exists - load data
     let mounted = true;
     let realtimeCleanup: (() => void) | null = null;
 
     (async () => {
       try {
+        setReady(false); // Set loading state
+        console.log('Loading kas data for session...');
         const loaded = await loadKasState();
         if (!mounted) return;
+        
+        console.log('Kas data loaded:', { booksCount: loaded.books.length, txsCount: loaded.txs.length });
         setState({
           ...loaded,
           books: loaded.books,
@@ -125,12 +144,12 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.error('KasContext initialization error:', error);
         // Set ready to true even on error so UI doesn't hang
-        setReady(true);
+        if (mounted) setReady(true);
       }
     })();
 
     const handleOnline = async () => {
-      if (mounted && realtimeCleanup) {
+      if (mounted && realtimeCleanup && session) {
         realtimeCleanup();
         const subs = setupRealtime();
         realtimeCleanup = () => {
@@ -151,7 +170,7 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
         window.removeEventListener('online', handleOnline);
       }
     };
-  }, [setupRealtime]);
+  }, [session, setupRealtime]); // Add session as dependency
 
   const persist = useCallback(async (next: KasState) => {
     setState(next);

@@ -76,17 +76,51 @@ export default function KelolaAnggotaScreen() {
   const fetchMembers = useCallback(async () => {
     setLoading(true);
     try {
+      console.log('Fetching members...');
       const { data, error } = await supabase
         .from('profiles')
         .select('id, email, nama_lengkap, role')
+        .in('role', ['admin', 'member']) // Only show admin and member roles
         .order('nama_lengkap', { ascending: true });
-      if (!error && data) setMemberAccounts(data as MemberAccount[]);
+      
+      if (error) {
+        console.error('Fetch members error:', error);
+        throw error;
+      }
+      
+      console.log('Fetched members:', data?.length || 0);
+      if (data) setMemberAccounts(data as MemberAccount[]);
+    } catch (e) {
+      console.error('fetchMembers failed:', e);
+      Alert.alert('Error', 'Gagal memuat daftar anggota');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchMembers(); }, [fetchMembers]);
+  useEffect(() => { 
+    fetchMembers(); 
+    
+    // Setup realtime subscription untuk auto-refresh saat ada perubahan profiles
+    const channel = supabase
+      .channel('profiles-changes')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'profiles' 
+      }, (payload) => {
+        console.log('Profile change detected:', payload);
+        // Refresh data saat ada perubahan
+        setTimeout(() => {
+          fetchMembers();
+        }, 500);
+      })
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchMembers]);
 
   const onCreateAccount = async () => {
     const email = newEmail.trim();
@@ -96,27 +130,69 @@ export default function KelolaAnggotaScreen() {
     if (pass.length < 6) return Alert.alert('Validasi', 'Password minimal 6 karakter.');
     const isProperCase = nama.split(' ').every((w: string) => w.length === 0 || w[0] === w[0].toUpperCase());
     if (!isProperCase) return Alert.alert('Validasi', 'Nama harus diawali huruf kapital di setiap kata.');
+    
     setCreating(true);
     try {
       const { data: { session: s } } = await supabase.auth.getSession();
-      if (!s?.access_token) return Alert.alert('Gagal', 'Session tidak ditemukan.');
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-user`, {
+      if (!s?.access_token) {
+        throw new Error('Session tidak ditemukan. Silakan login ulang.');
+      }
+      
+      // Debug environment variables
+      console.log('Environment check:', {
+        SUPABASE_URL: SUPABASE_URL,
+        SUPABASE_ANON_KEY: SUPABASE_ANON_KEY ? 'Present' : 'Missing',
+        hasSession: !!s?.access_token
+      });
+      
+      // Fallback URL jika SUPABASE_URL undefined
+      const supabaseUrl = SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://dtqilxwiezlrtneoaxdb.supabase.co';
+      const supabaseAnonKey = SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_fRFOL9FzPFAAhlWRLbnPvw_E0g3F3Ps';
+      
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error('Supabase configuration missing. Please check environment variables.');
+      }
+      
+      console.log('Calling create-user Edge Function...');
+      const functionUrl = `${supabaseUrl}/functions/v1/create-user`;
+      console.log('Function URL:', functionUrl);
+      
+      const res = await fetch(functionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${s.access_token}`,
-          'apikey': SUPABASE_ANON_KEY ?? '',
+          'apikey': supabaseAnonKey,
         },
         body: JSON.stringify({ email, password: pass, namaLengkap: nama }),
       });
+      
       let json: any = {};
-      try { json = await res.json(); } catch {}
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      try { 
+        json = await res.json(); 
+      } catch (parseError) {
+        console.error('Failed to parse response:', parseError);
+      }
+      
+      console.log('Edge Function response:', { status: res.status, json });
+      
+      if (!res.ok) {
+        throw new Error(json.error ?? `HTTP ${res.status}: ${res.statusText}`);
+      }
+      
       Alert.alert('Berhasil', `Akun untuk ${nama} berhasil dibuat.`);
-      setNewEmail(''); setNewNama(''); setNewPassword('');
+      setNewEmail(''); 
+      setNewNama(''); 
+      setNewPassword('');
       setAddVisible(false);
-      fetchMembers();
+      
+      // Refresh data dengan delay untuk memastikan profile sudah terbuat
+      setTimeout(() => {
+        fetchMembers();
+      }, 1000);
+      
     } catch (e: any) {
+      console.error('Create account error:', e);
       Alert.alert('Gagal', e?.message ?? 'Terjadi kesalahan.');
     } finally {
       setCreating(false);
@@ -146,23 +222,52 @@ export default function KelolaAnggotaScreen() {
     if (!deleteTarget) return;
     try {
       const { data: { session: s } } = await supabase.auth.getSession();
-      if (!s?.access_token) return Alert.alert('Gagal', 'Session tidak ditemukan.');
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/delete-user`, {
+      if (!s?.access_token) {
+        throw new Error('Session tidak ditemukan. Silakan login ulang.');
+      }
+      
+      // Fallback URL jika SUPABASE_URL undefined
+      const supabaseUrl = SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://dtqilxwiezlrtneoaxdb.supabase.co';
+      const supabaseAnonKey = SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_fRFOL9FzPFAAhlWRLbnPvw_E0g3F3Ps';
+      
+      console.log('Calling delete-user Edge Function...');
+      const functionUrl = `${supabaseUrl}/functions/v1/delete-user`;
+      
+      const res = await fetch(functionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${s.access_token}`,
-          'apikey': SUPABASE_ANON_KEY ?? '',
+          'apikey': supabaseAnonKey,
           'x-client-info': 'supabase-js/2',
         },
         body: JSON.stringify({ userId: deleteTarget.id }),
       });
+      
       let json: any = {};
-      try { json = await res.json(); } catch {}
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setDeleteConfirmVisible(false); setDeleteTarget(null);
-      fetchMembers();
+      try { 
+        json = await res.json(); 
+      } catch (parseError) {
+        console.error('Failed to parse response:', parseError);
+      }
+      
+      console.log('Delete Edge Function response:', { status: res.status, json });
+      
+      if (!res.ok) {
+        throw new Error(json.error ?? `HTTP ${res.status}: ${res.statusText}`);
+      }
+      
+      Alert.alert('Berhasil', `Akun ${deleteTarget.nama_lengkap} berhasil dihapus.`);
+      setDeleteConfirmVisible(false); 
+      setDeleteTarget(null);
+      
+      // Refresh data
+      setTimeout(() => {
+        fetchMembers();
+      }, 500);
+      
     } catch (e: any) {
+      console.error('Delete account error:', e);
       Alert.alert('Gagal', e?.message ?? 'Terjadi kesalahan.');
     }
   };
