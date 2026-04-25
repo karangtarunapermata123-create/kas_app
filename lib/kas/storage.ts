@@ -13,9 +13,22 @@ export async function loadKasState(): Promise<KasState> {
       supabase.from('meta').select('*').eq('key', 'activeKasId').single(),
     ]);
 
+    // Log errors for debugging
+    if (booksRes.error) {
+      console.error('Books query error:', booksRes.error);
+    }
+    if (txsRes.error) {
+      console.error('Txs query error:', txsRes.error);
+    }
+    if (metaRes.error && metaRes.error.code !== 'PGRST116') { // PGRST116 = no rows returned
+      console.error('Meta query error:', metaRes.error);
+    }
+
     const books: KasBook[] = (booksRes.data ?? []).map(rowToBook);
     const txs: KasTx[] = (txsRes.data ?? []).map(rowToTx);
     const activeKasId: string = metaRes.data?.value ?? '';
+
+    console.log('loadKasState success:', { booksCount: books.length, txsCount: txs.length, activeKasId });
 
     return { version: 2, activeKasId, books, txs };
   } catch (e) {

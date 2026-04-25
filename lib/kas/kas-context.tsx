@@ -107,20 +107,26 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
     let realtimeCleanup: (() => void) | null = null;
 
     (async () => {
-      const loaded = await loadKasState();
-      if (!mounted) return;
-      setState({
-        ...loaded,
-        books: loaded.books,
-        txs: sortTxsDesc(loaded.txs),
-      });
-      setReady(true);
+      try {
+        const loaded = await loadKasState();
+        if (!mounted) return;
+        setState({
+          ...loaded,
+          books: loaded.books,
+          txs: sortTxsDesc(loaded.txs),
+        });
+        setReady(true);
 
-      const subs = setupRealtime();
-      realtimeCleanup = () => {
-        supabase.removeChannel(subs.booksSub);
-        supabase.removeChannel(subs.txsSub);
-      };
+        const subs = setupRealtime();
+        realtimeCleanup = () => {
+          supabase.removeChannel(subs.booksSub);
+          supabase.removeChannel(subs.txsSub);
+        };
+      } catch (error) {
+        console.error('KasContext initialization error:', error);
+        // Set ready to true even on error so UI doesn't hang
+        setReady(true);
+      }
     })();
 
     const handleOnline = async () => {
