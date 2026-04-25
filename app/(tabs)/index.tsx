@@ -19,6 +19,9 @@ export default function HomeScreen() {
   const backgroundColor = useThemeColor({}, 'background');
   const mutedColor = useThemeColor({}, 'muted');
 
+  // Debug info - hapus setelah masalah teratasi
+  console.log('HomeScreen Debug:', { ready, booksCount: books.length, txsCount: txsAll.length });
+
   const bookStats = useMemo(() => {
     const stats: Record<string, { masuk: number; keluar: number; saldo: number }> = {};
     books.forEach(b => { stats[b.id] = { masuk: 0, keluar: 0, saldo: 0 }; });
@@ -31,6 +34,22 @@ export default function HomeScreen() {
     return stats;
   }, [books, txsAll]);
 
+  // Show loading state while kas context is not ready
+  if (!ready) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
+        <ThemedView style={styles.emptyContainer}>
+          <Ionicons name="hourglass-outline" size={80} color={mutedColor} style={{ marginBottom: 20 }} />
+          <ThemedText type="title" style={{ textAlign: 'center', marginBottom: 10 }}>Memuat...</ThemedText>
+          <ThemedText type="muted" style={{ textAlign: 'center' }}>
+            Sedang memuat data buku kas Anda.
+          </ThemedText>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
+
+  // Show empty state only when ready and no books
   if (ready && books.length === 0) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
@@ -50,6 +69,7 @@ export default function HomeScreen() {
     );
   }
 
+  // Show books list when ready and books exist
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
         <ScrollView
