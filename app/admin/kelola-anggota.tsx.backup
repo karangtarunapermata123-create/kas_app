@@ -8,15 +8,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -247,7 +247,26 @@ export default function KelolaAnggotaScreen() {
     }
   };
 
-  const onDelete = async () => {
+  const onChangeRole = async () => {
+    if (!changeRoleTarget) return;
+    setChangingRole(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('id', changeRoleTarget.id);
+      
+      if (error) throw new Error(error.message);
+      
+      Alert.alert('Berhasil', `Role ${changeRoleTarget.nama_lengkap} berhasil diubah menjadi ${newRole === 'admin' ? 'Admin' : 'Member'}.`);
+      setChangeRoleTarget(null);
+      fetchMembers();
+    } catch (e: any) {
+      Alert.alert('Gagal', e?.message ?? 'Terjadi kesalahan.');
+    } finally {
+      setChangingRole(false);
+    }
+  };
     if (!deleteTarget) return;
     try {
       const { data: { session: s } } = await supabase.auth.getSession();

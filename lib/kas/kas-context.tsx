@@ -2,15 +2,15 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 
 import { useAdmin } from '@/lib/admin/admin-context';
 import { supabase } from '@/lib/supabase/client';
-import { deleteBookFromDB, deleteTxFromDB, emptyKasStateV2, loadKasState, rowToBook, rowToTx, saveKasState, sortTxsDesc } from './storage';
-import type { KasBook, KasBookType, KasMember, KasState, KasTx, PeriodType } from './types';
+import { deleteBookFromDB, deleteTxFromDB, emptyKasStateV2, loadKasState, rowToBook, rowToTx, saveKasState, sortTxsDesc, upsertTxToDB } from './storage';
+import type { KasBook, KasBookType, KasMember, KasState, KasTx, KolektifItem, PeriodType } from './types';
 
 type KasContextValue = {
   ready: boolean;
   books: KasBook[];
   activeKasId: string;
   setActiveKasId: (id: string) => Promise<void>;
-  addKas: (nama: string, tipe?: KasBookType, periodConfig?: { tipe: PeriodType; nominal: number }, categories?: string[], members?: string[], periodRates?: Record<string, number>) => Promise<KasBook>;
+  addKas: (nama: string, tipe?: KasBookType, periodConfig?: { tipe: PeriodType; nominal: number }, categories?: string[], members?: string[], periodRates?: Record<string, number>, kolektifItems?: KolektifItem[]) => Promise<KasBook>;
   renameKas: (id: string, nama: string) => Promise<void>;
   deleteKas: (id: string) => Promise<void>;
 
@@ -26,6 +26,8 @@ type KasContextValue = {
   clearAll: (scope?: 'active' | 'all') => Promise<void>;
   updateCategories: (kasId: string, categories: string[]) => Promise<void>;
   updatePeriodRates: (kasId: string, rates: Record<string, number>) => Promise<void>;
+  updateEditorIds: (kasId: string, editorIds: string[]) => Promise<void>;
+  updateKolektifItems: (kasId: string, items: KolektifItem[]) => Promise<void>;
 };
 
 const KasContext = createContext<KasContextValue | null>(null);
@@ -68,7 +70,9 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
           return prev;
         });
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('books realtime:', status);
+      });
 
     const txsSub = supabase
       .channel('txs-changes')
@@ -88,7 +92,9 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
           return prev;
         });
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('txs realtime:', status);
+      });
 
     return { booksSub, txsSub };
   }, []);
@@ -123,11 +129,15 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
-        setReady(false); // Set loading state
+        setReady(false);
         console.log('Loading kas data for session...');
+
+        // Cleanup channel lama dulu sebelum subscribe baru
+        await supabase.removeAllChannels();
+
         const loaded = await loadKasState();
         if (!mounted) return;
-        
+
         console.log('Kas data loaded:', { booksCount: loaded.books.length, txsCount: loaded.txs.length });
         setState({
           ...loaded,
@@ -143,7 +153,6 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
         };
       } catch (error) {
         console.error('KasContext initialization error:', error);
-        // Set ready to true even on error so UI doesn't hang
         if (mounted) setReady(true);
       }
     })();
@@ -189,20 +198,25 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
     async (tx: Omit<KasTx, 'kasId'> & { kasId?: string }) => {
       const cur = stateRef.current;
       const kasId = tx.kasId ?? cur.activeKasId;
-      const filtered = cur.txs.filter((t) => t.id !== tx.id);
       const nextTx: KasTx = { ...tx, kasId } as KasTx;
-      await persist({ ...cur, txs: sortTxsDesc([nextTx, ...filtered]) });
+      // Update state optimistically
+      const filtered = cur.txs.filter((t) => t.id !== nextTx.id);
+      setState({ ...cur, txs: sortTxsDesc([nextTx, ...filtered]) });
+      // Save only this single tx to DB
+      await upsertTxToDB(nextTx);
     },
-    [persist],
+    [],
   );
 
   const deleteTx = useCallback(
     async (id: string) => {
       const cur = stateRef.current;
+      // Update state optimistically
+      setState({ ...cur, txs: cur.txs.filter((t) => t.id !== id) });
+      // Delete from DB
       await deleteTxFromDB(id);
-      await persist({ ...cur, txs: cur.txs.filter((t) => t.id !== id) });
     },
-    [persist],
+    [],
   );
 
   const clearAll = useCallback(
@@ -217,20 +231,21 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addKas = useCallback(
-    async (nama: string, tipe: KasBookType = 'STANDARD', periodConfig?: { tipe: PeriodType; nominal: number }, categories?: string[], members?: string[], periodRates?: Record<string, number>) => {
+    async (nama: string, tipe: KasBookType = 'STANDARD', periodConfig?: { tipe: PeriodType; nominal: number }, categories?: string[], members?: string[], periodRates?: Record<string, number>, kolektifItems?: KolektifItem[]) => {
       const now = Date.now();
-      const book: KasBook = { 
-        id: makeId('kas'), 
-        nama: nama.trim() || 'Kas Baru', 
+      const book: KasBook = {
+        id: makeId('kas'),
+        nama: nama.trim() || 'Kas Baru',
         tipe,
         periodConfig,
-        periodRates: tipe === 'PERIODIK' && categories && periodConfig 
-          ? (periodRates || Object.fromEntries((categories.length ? categories : ['Iuran']).map(c => [c, periodConfig.nominal]))) 
+        periodRates: tipe === 'PERIODIK' && categories && periodConfig
+          ? (periodRates || Object.fromEntries((categories.length ? categories : ['Iuran']).map(c => [c, periodConfig.nominal])))
           : undefined,
-        members: tipe === 'PERIODIK' ? (members || []).map(m => ({ id: makeId('mem'), nama: m })) : undefined,
-        categories: categories || [],
-        createdAt: now, 
-        updatedAt: now 
+        members: (tipe === 'PERIODIK' || tipe === 'KOLEKTIF') ? (members || []).map(m => ({ id: makeId('mem'), nama: m })) : undefined,
+        categories: tipe === 'PERIODIK' ? (categories || []) : [],
+        kolektifItems: tipe === 'KOLEKTIF' ? (kolektifItems || []) : undefined,
+        createdAt: now,
+        updatedAt: now,
       };
       const next: KasState = { ...state, books: [...state.books, book], activeKasId: book.id };
       await persist(next);
@@ -329,6 +344,28 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
     [persist],
   );
 
+  const updateEditorIds = useCallback(
+    async (kasId: string, editorIds: string[]) => {
+      const cur = stateRef.current;
+      const nextBooks = cur.books.map((b) =>
+        b.id === kasId ? { ...b, editorIds, updatedAt: Date.now() } : b,
+      );
+      await persist({ ...cur, books: nextBooks });
+    },
+    [persist],
+  );
+
+  const updateKolektifItems = useCallback(
+    async (kasId: string, items: KolektifItem[]) => {
+      const cur = stateRef.current;
+      const nextBooks = cur.books.map((b) =>
+        b.id === kasId ? { ...b, kolektifItems: items, updatedAt: Date.now() } : b,
+      );
+      await persist({ ...cur, books: nextBooks });
+    },
+    [persist],
+  );
+
   const txsActive = useMemo(() => state.txs.filter((t) => t.kasId === state.activeKasId), [state]);
 
   const value = useMemo<KasContextValue>(
@@ -350,6 +387,8 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
       clearAll,
       updateCategories,
       updatePeriodRates,
+      updateEditorIds,
+      updateKolektifItems,
     }),
     [
       addKas,
@@ -365,6 +404,8 @@ export function KasProvider({ children }: { children: React.ReactNode }) {
       txsActive,
       updateCategories,
       updatePeriodRates,
+      updateEditorIds,
+      updateKolektifItems,
       updateMember,
       upsertTx,
     ],

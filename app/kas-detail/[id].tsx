@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { KolektifTable } from '@/components/kolektif-table';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -32,7 +33,7 @@ type TypeFilter = 'ALL' | 'MASUK' | 'KELUAR';
 export default function KasDetailScreen() {
   const { id, defaultYear, defaultMonth } = useLocalSearchParams<{ id: string; defaultYear?: string; defaultMonth?: string }>();
   const { books, txsAll, upsertTx, updateCategories } = useKas();
-  const { isAdmin } = useAdmin();
+  const { isSuperAdmin, session } = useAdmin();
   const { height: screenHeight, width: screenWidth } = useWindowDimensions();
 
   const tintColor = useThemeColor({}, 'tint');
@@ -45,6 +46,13 @@ export default function KasDetailScreen() {
 
   const book = useMemo(() => books.find(b => b.id === id), [books, id]);
   const txsActive = useMemo(() => txsAll.filter(t => t.kasId === id), [txsAll, id]);
+
+  // Super admin selalu bisa edit; user lain hanya jika ada di editorIds buku ini
+  const canEditTx = useMemo(() => {
+    if (isSuperAdmin) return true;
+    if (!session?.user?.id || !book?.editorIds?.length) return false;
+    return book.editorIds.includes(session.user.id);
+  }, [isSuperAdmin, session?.user?.id, book?.editorIds]);
 
   const now = new Date();
   const initialYear = defaultYear ? Number(defaultYear) : now.getFullYear();
@@ -109,7 +117,7 @@ export default function KasDetailScreen() {
     setTxCatEditMode(false);
     setTxNewCategoryName('');
     setAddTxVisible(true);
-  }, [isAdmin, selectedMonth, selectedYear, txCategories]);
+  }, [isSuperAdmin, selectedMonth, selectedYear, txCategories]);
 
   const closeAddTx = useCallback(() => { Keyboard.dismiss(); setAddTxVisible(false); }, []);
 
@@ -123,7 +131,7 @@ export default function KasDetailScreen() {
       // Fokuskan kembali ke field input kategori, bukan ke field lain
       setTimeout(() => { txNewCategoryInputRef.current?.focus(); }, 50);
     } catch (e: any) { Alert.alert('Gagal', e?.message || 'Gagal menambah kategori'); }
-  }, [id, isAdmin, txCategories, txNewCategoryName, updateCategories]);
+  }, [id, isSuperAdmin, txCategories, txNewCategoryName, updateCategories]);
 
   const onDeleteTxCategory = useCallback(async (name: string) => {
     Alert.alert('Hapus Kategori', `Hapus kategori "${name}"?`, [
@@ -136,7 +144,7 @@ export default function KasDetailScreen() {
         } catch (e: any) { Alert.alert('Gagal', e?.message || 'Gagal menghapus kategori'); }
       }},
     ]);
-  }, [id, addTxKategori, isAdmin, txCategories, updateCategories]);
+  }, [id, addTxKategori, isSuperAdmin, txCategories, updateCategories]);
 
   const onSaveAddTx = useCallback(async () => {
     const n = Math.round(Number(String(addTxNominal).replace(/[^\d]/g, '')));
@@ -157,7 +165,7 @@ export default function KasDetailScreen() {
     };
     try { await upsertTx(tx); closeAddTx(); }
     catch (e: any) { Alert.alert('Gagal', e?.message || 'Gagal menyimpan transaksi'); }
-  }, [id, addTxDeskripsi, addTxJenis, addTxKategori, addTxNominal, addTxTanggalISO, closeAddTx, isAdmin, upsertTx]);
+  }, [id, addTxDeskripsi, addTxJenis, addTxKategori, addTxNominal, addTxTanggalISO, closeAddTx, isSuperAdmin, upsertTx]);
 
   const filteredAndSortedTxs = useMemo(() => {
     let result = txsActive.filter(tx => {
@@ -214,11 +222,17 @@ export default function KasDetailScreen() {
       const filtered = txsActive.filter((t) => !t.periodikData?.memberId?.startsWith('__TRANSFER'));
       return computeSaldo(filtered);
     }
+    if (book?.tipe === 'KOLEKTIF') {
+      // Hanya hitung transaksi MASUK (setor) yang bukan skip
+      const filtered = txsActive.filter((t) => t.jenis === 'MASUK' && !t.periodikData?.isTidakSetor);
+      return computeSaldo(filtered);
+    }
     return computeSaldo(txsActive);
   }, [book?.tipe, txsActive]);
 
   const isPeriodik = book?.tipe === 'PERIODIK';
   const isPeriodikMonthly = isPeriodik && book?.periodConfig?.tipe === 'MONTHLY';
+  const isKolektif = book?.tipe === 'KOLEKTIF';
 
   if (!book) {
     return (
@@ -248,7 +262,17 @@ export default function KasDetailScreen() {
         <View style={{ width: 80 }} />
       </View>
 
-      {isPeriodik ? (
+      {isKolektif ? (
+        /* Layout KOLEKTIF — full width */
+        <View style={{ flex: 1 }}>
+          <View style={s.tableTitleRow}>
+            <ThemedText type="defaultSemiBold" style={s.listTitle}>Status Setor Anggota</ThemedText>
+          </View>
+          <View style={{ flex: 1, marginBottom: 16 }}>
+            <KolektifTable book={book} txs={txsActive} canEdit={canEditTx} />
+          </View>
+        </View>
+      ) : isPeriodik ? (
         /* Layout PERIODIK — flex:1 supaya tabel mengisi layar penuh */
         <View style={{ flex: 1 }}>
           {/* Month nav */}
@@ -274,7 +298,7 @@ export default function KasDetailScreen() {
           </View>
 
           <View style={{ flex: 1, marginHorizontal: 20, marginBottom: 20 }}>
-            <PeriodicTable book={book} txs={txsActive} selectedYear={selectedYear} selectedMonth={selectedMonth} />
+            <PeriodicTable book={book} txs={txsActive} selectedYear={selectedYear} selectedMonth={selectedMonth} canEdit={canEditTx} />
           </View>
         </View>
       ) : (
@@ -355,7 +379,7 @@ export default function KasDetailScreen() {
                 </ThemedView>
               ) : (
                 filteredAndSortedTxs.map((item, index) => (
-                  <Pressable key={item.id} onPress={() => router.push({ pathname: '/transaction/form', params: { id: item.id } })} style={[s.tableRow, { borderColor, backgroundColor: index % 2 === 0 ? 'transparent' : 'rgba(127,127,127,0.04)' }]}>
+                  <Pressable key={item.id} onPress={() => canEditTx && router.push({ pathname: '/transaction/form', params: { id: item.id } })} style={[s.tableRow, { borderColor, backgroundColor: index % 2 === 0 ? 'transparent' : 'rgba(127,127,127,0.04)' }]}>
                     {effectiveCols.map((col, ci) => {
                       let val = '';
                       if (col.key === 'tanggal') val = item.tanggalISO.slice(5).replace('-', '/');
@@ -393,8 +417,8 @@ export default function KasDetailScreen() {
       </ScrollView>
       )}
 
-      {/* FAB — hanya untuk STANDARD */}
-      {isAdmin && !isPeriodik && (
+      {/* FAB — hanya untuk STANDARD dan user yang punya akses edit */}
+      {canEditTx && !isPeriodik && !isKolektif && (
         <Pressable
           onPress={openAddTx}
           style={({ pressed }) => [s.fab, { backgroundColor: tintColor }, pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }]}
@@ -542,13 +566,14 @@ export default function KasDetailScreen() {
   );
 }
 
-function PeriodicTable({ book, txs, selectedYear, selectedMonth }: {
+function PeriodicTable({ book, txs, selectedYear, selectedMonth, canEdit }: {
   book: import('@/lib/kas/types').KasBook;
   txs: KasTx[];
   selectedYear: number;
   selectedMonth: number | 'ALL';
+  canEdit: boolean;
 }) {
-  const { isAdmin } = useAdmin();
+  const { isSuperAdmin } = useAdmin();
   const { upsertTx, deleteTx } = useKas();
   const borderColor = useThemeColor({}, 'border');
   const successColor = useThemeColor({}, 'success');
@@ -650,7 +675,7 @@ function PeriodicTable({ book, txs, selectedYear, selectedMonth }: {
   }, [txs]);
 
   const openModal = (memberId: string, memberName: string, periodId: string, periodLabel: string, category: string) => {
-    if (!isAdmin) return;
+    if (!canEdit) return;
     if (transferredSet.has(`${periodId}_${category}`)) {
       Alert.alert('Info', 'Kategori untuk periode ini sudah ditransfer.');
       return;
@@ -857,7 +882,7 @@ function PeriodicTable({ book, txs, selectedYear, selectedMonth }: {
                         <Pressable
                           key={col.id}
                           onPress={() => openModal(m.id, m.nama, col.id, col.label, cat)}
-                          disabled={!isAdmin || transferred}
+                          disabled={!canEdit || transferred}
                           style={{ width: colWidth, alignItems: 'center', justifyContent: 'center' }}
                         >
                           <View style={{

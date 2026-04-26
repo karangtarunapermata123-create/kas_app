@@ -66,6 +66,13 @@ export default function UndianSessionDetailScreen() {
   } | null>(null);
   const [savingResult, setSavingResult] = useState(false);
 
+  // Delete result confirmation
+  const [deleteResultTarget, setDeleteResultTarget] = useState<{
+    id: string;
+    winnerName: string;
+  } | null>(null);
+  const [deletingResult, setDeletingResult] = useState(false);
+
   const loadData = useCallback(async () => {
     if (!sessionId) return;
     
@@ -255,31 +262,33 @@ export default function UndianSessionDetailScreen() {
   }, []);
 
   const onDeleteResult = useCallback(async (resultId: string, winnerName: string) => {
-    Alert.alert(
-      'Hapus Hasil',
-      `Hapus ${winnerName} dari daftar yang terpilih?`,
-      [
-        { text: 'Batal', style: 'cancel' },
-        {
-          text: 'Hapus',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('undian_results')
-                .delete()
-                .eq('id', resultId);
+    setDeleteResultTarget({ id: resultId, winnerName });
+  }, []);
 
-              if (error) throw new Error(error.message);
-              loadData();
-            } catch (e: any) {
-              Alert.alert('Gagal', e.message);
-            }
-          }
-        }
-      ]
-    );
-  }, [loadData]);
+  const confirmDeleteResult = useCallback(async () => {
+    if (!deleteResultTarget) return;
+    
+    setDeletingResult(true);
+    try {
+      const { error } = await supabase
+        .from('undian_results')
+        .delete()
+        .eq('id', deleteResultTarget.id);
+
+      if (error) throw new Error(error.message);
+      
+      setDeleteResultTarget(null);
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Gagal', e.message);
+    } finally {
+      setDeletingResult(false);
+    }
+  }, [deleteResultTarget, loadData]);
+
+  const cancelDeleteResult = useCallback(() => {
+    setDeleteResultTarget(null);
+  }, []);
 
   const spin = spinValue.interpolate({
     inputRange: [0, 1],
@@ -312,131 +321,154 @@ export default function UndianSessionDetailScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: borderColor }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={tintColor} />
-          <ThemedText style={{ color: tintColor, fontSize: 16 }}>Kembali</ThemedText>
-        </Pressable>
+        <View style={styles.backBtn}>
+          <Pressable onPress={() => router.back()} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="chevron-back" size={24} color={tintColor} />
+            <ThemedText style={{ color: tintColor, fontSize: 16 }}>Kembali</ThemedText>
+          </Pressable>
+        </View>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>{session.label}</ThemedText>
           <ThemedText type="muted" style={{ fontSize: 12 }}>Detail Sesi Undian</ThemedText>
         </View>
-        {isAdmin && (
-          <Pressable
-            onPress={() => router.push({ 
-              pathname: '/undian/undian-members', 
-              params: { sessionId } 
-            })}
-            style={({ pressed }) => [
-              styles.editBtn,
-              { backgroundColor: tintColor },
-              pressed && { opacity: 0.75 },
-            ]}>
-            <Ionicons name="people" size={18} color="white" />
-          </Pressable>
-        )}
+        <View style={styles.rightSection}>
+          {isAdmin && (
+            <Pressable
+              onPress={() => router.push({ 
+                pathname: '/undian/undian-members', 
+                params: { sessionId } 
+              })}
+              style={({ pressed }) => [
+                styles.editBtn,
+                { backgroundColor: tintColor },
+                pressed && { opacity: 0.75 },
+              ]}>
+              <Ionicons name="people" size={18} color="white" />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Arrow Navigation */}
-        <View style={styles.arrowNav}>
-          <Pressable
-            onPress={() => setCurrentView('members')}
-            disabled={currentView === 'members'}
-            style={({ pressed }) => [
-              styles.arrowButton,
-              { borderColor },
-              currentView === 'members' && { opacity: 0.3 },
-              pressed && { opacity: 0.7 }
-            ]}>
-            <Ionicons name="chevron-back" size={20} color={tintColor} />
-          </Pressable>
-
-          <ThemedText type="defaultSemiBold" style={{ fontSize: 16, flex: 1, textAlign: 'center' }}>
-            {currentView === 'members' ? `Daftar Peserta (${members.length})` : `Yang Terpilih (${results.length})`}
-          </ThemedText>
-
-          <Pressable
-            onPress={() => setCurrentView('winners')}
-            disabled={currentView === 'winners'}
-            style={({ pressed }) => [
-              styles.arrowButton,
-              { borderColor },
-              currentView === 'winners' && { opacity: 0.3 },
-              pressed && { opacity: 0.7 }
-            ]}>
-            <Ionicons name="chevron-forward" size={20} color={tintColor} />
-          </Pressable>
-        </View>
-
         {/* Content Area */}
         {currentView === 'members' ? (
-          /* Daftar Peserta */
+          /* Daftar yang Belum Dapat */
           <ThemedView type="card" style={[styles.card, { borderColor }]}>
+            {/* Arrow Navigation */}
+            <View style={styles.arrowNav}>
+              <Pressable
+                onPress={() => setCurrentView('members')}
+                disabled={currentView === 'members'}
+                style={({ pressed }) => [
+                  styles.arrowButton,
+                  { borderColor },
+                  currentView === 'members' && { opacity: 0.3 },
+                  pressed && { opacity: 0.7 }
+                ]}>
+                <Ionicons name="chevron-back" size={20} color={tintColor} />
+              </Pressable>
+
+              <ThemedText type="defaultSemiBold" style={{ fontSize: 16, flex: 1, textAlign: 'center' }}>
+                Daftar yang Belum Dapat ({members.filter(m => !results.some(r => r.winner_id === m.user_id)).length})
+              </ThemedText>
+
+              <Pressable
+                onPress={() => setCurrentView('winners')}
+                disabled={currentView === 'winners'}
+                style={({ pressed }) => [
+                  styles.arrowButton,
+                  { borderColor },
+                  currentView === 'winners' && { opacity: 0.3 },
+                  pressed && { opacity: 0.7 }
+                ]}>
+                <Ionicons name="chevron-forward" size={20} color={tintColor} />
+              </Pressable>
+            </View>
+            
             <View style={styles.cardHeader}>
-              <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>Daftar Peserta</ThemedText>
+              <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>Daftar yang Belum Dapat</ThemedText>
               <ThemedText type="muted" style={{ fontSize: 12 }}>
-                {members.length} orang
+                {members.filter(m => !results.some(r => r.winner_id === m.user_id)).length} orang
               </ThemedText>
             </View>
             
-            {members.length === 0 ? (
-              <View style={styles.emptyMembers}>
-                <Ionicons name="people-outline" size={32} color={mutedColor} />
-                <ThemedText type="muted" style={{ marginTop: 8, textAlign: 'center' }}>
-                  {isAdmin ? 'Belum ada peserta. Tambah peserta untuk memulai undian.' : 'Belum ada peserta terdaftar.'}
-                </ThemedText>
-              </View>
-            ) : (
-              <View style={{ gap: 8, marginTop: 12 }}>
-                {members.map((member, index) => {
-                  const nama = member.nama_lengkap || member.email || 'Anggota';
-                  const hasWon = results.some(r => r.winner_id === member.user_id);
-                  
-                  return (
-                    <View key={member.id} style={[
-                      styles.memberRow, 
-                      { borderColor },
-                      hasWon && { backgroundColor: successColor + '08' }
-                    ]}>
-                      <View style={[styles.memberNumber, { backgroundColor: tintColor + '18' }]}>
-                        <ThemedText style={{ color: tintColor, fontWeight: '700', fontSize: 12 }}>
-                          {index + 1}
-                        </ThemedText>
-                      </View>
-                      <View style={[styles.memberAvatar, { backgroundColor: tintColor + '18' }]}>
-                        <ThemedText style={{ color: tintColor, fontWeight: '700', fontSize: 14 }}>
-                          {nama.charAt(0).toUpperCase()}
-                        </ThemedText>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }}>
-                          {nama}
-                        </ThemedText>
-                        {member.nama_lengkap && member.email && (
-                          <ThemedText type="muted" style={{ fontSize: 12 }}>
-                            {member.email}
-                          </ThemedText>
-                        )}
-                      </View>
-                      {hasWon && (
-                        <View style={[styles.winCountBadge, { backgroundColor: successColor + '18' }]}>
-                          <Ionicons name="trophy" size={12} color={successColor} />
-                          <ThemedText style={{ color: successColor, fontSize: 11, fontWeight: '600' }}>
-                            Terpilih
+            {(() => {
+              const availableMembers = members.filter(m => !results.some(r => r.winner_id === m.user_id));
+              
+              if (availableMembers.length === 0) {
+                return (
+                  <View style={styles.emptyMembers}>
+                    <Ionicons name="people-outline" size={32} color={mutedColor} />
+                    <ThemedText type="muted" style={{ marginTop: 8, textAlign: 'center' }}>
+                      {members.length === 0 
+                        ? (isAdmin ? 'Belum ada peserta. Tambah peserta untuk memulai undian.' : 'Belum ada peserta terdaftar.')
+                        : 'Semua peserta sudah mendapat giliran.'
+                      }
+                    </ThemedText>
+                  </View>
+                );
+              }
+
+              return (
+                <View style={{ gap: 8, marginTop: 12 }}>
+                  {availableMembers.map((member, index) => {
+                    const nama = member.nama_lengkap || member.email || 'Anggota';
+                    
+                    return (
+                      <View key={member.id} style={[styles.memberRow, { borderColor }]}>
+                        <View style={[styles.memberNumber, { backgroundColor: tintColor + '18' }]}>
+                          <ThemedText style={{ color: tintColor, fontWeight: '700', fontSize: 12 }}>
+                            {index + 1}
                           </ThemedText>
                         </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
+                        <View style={{ flex: 1 }}>
+                          <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }}>
+                            {nama}
+                          </ThemedText>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })()}
           </ThemedView>
         ) : (
           /* Daftar Pemenang */
           <ThemedView type="card" style={[styles.card, { borderColor }]}>
+            {/* Arrow Navigation */}
+            <View style={styles.arrowNav}>
+              <Pressable
+                onPress={() => setCurrentView('members')}
+                disabled={currentView === 'members'}
+                style={({ pressed }) => [
+                  styles.arrowButton,
+                  { borderColor },
+                  currentView === 'members' && { opacity: 0.3 },
+                  pressed && { opacity: 0.7 }
+                ]}>
+                <Ionicons name="chevron-back" size={20} color={tintColor} />
+              </Pressable>
+
+              <ThemedText type="defaultSemiBold" style={{ fontSize: 16, flex: 1, textAlign: 'center' }}>
+                Daftar yang Sudah Dapat ({results.length})
+              </ThemedText>
+
+              <Pressable
+                onPress={() => setCurrentView('winners')}
+                disabled={currentView === 'winners'}
+                style={({ pressed }) => [
+                  styles.arrowButton,
+                  { borderColor },
+                  currentView === 'winners' && { opacity: 0.3 },
+                  pressed && { opacity: 0.7 }
+                ]}>
+                <Ionicons name="chevron-forward" size={20} color={tintColor} />
+              </Pressable>
+            </View>
+
             <View style={styles.cardHeader}>
-              <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>🎯 Yang Terpilih</ThemedText>
+              <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>Daftar yang Sudah Dapat</ThemedText>
               <ThemedText type="muted" style={{ fontSize: 12 }}>
                 {results.length} undian
               </ThemedText>
@@ -446,7 +478,7 @@ export default function UndianSessionDetailScreen() {
               <View style={styles.emptyMembers}>
                 <Ionicons name="trophy-outline" size={32} color={mutedColor} />
                 <ThemedText type="muted" style={{ marginTop: 8, textAlign: 'center' }}>
-                  Belum ada yang terpilih. Mulai undian untuk menentukan yang beruntung.
+                  Belum ada yang sudah dapat. Mulai undian untuk menentukan yang beruntung.
                 </ThemedText>
               </View>
             ) : (
@@ -455,11 +487,8 @@ export default function UndianSessionDetailScreen() {
                   <View key={result.id} style={[styles.winnerRow, { borderColor }]}>
                     <View style={[styles.winnerNumber, { backgroundColor: successColor + '18' }]}>
                       <ThemedText style={{ color: successColor, fontWeight: '700', fontSize: 12 }}>
-                        #{index + 1}
+                        {index + 1}
                       </ThemedText>
-                    </View>
-                    <View style={[styles.winnerIcon, { backgroundColor: successColor + '18' }]}>
-                      <Ionicons name="trophy" size={18} color={successColor} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }}>
@@ -532,7 +561,7 @@ export default function UndianSessionDetailScreen() {
             </View>
             
             <ThemedText type="defaultSemiBold" style={{ fontSize: 20, textAlign: 'center', marginBottom: 8 }}>
-              Yang Terpilih
+              Konfirmasi Hasil Undian
             </ThemedText>
             
             <ThemedText style={{ fontSize: 24, fontWeight: '700', textAlign: 'center', marginBottom: 16, color: successColor }}>
@@ -540,7 +569,7 @@ export default function UndianSessionDetailScreen() {
             </ThemedText>
             
             <ThemedText type="muted" style={{ fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
-              Apakah Anda ingin menyimpan hasil undian ini? Setelah disimpan, {pendingResult?.winnerName} akan tercatat sebagai yang terpilih.
+              Apakah Anda ingin menyimpan hasil undian ini? Setelah disimpan, {pendingResult?.winnerName} akan tercatat sebagai yang sudah dapat.
             </ThemedText>
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -573,6 +602,57 @@ export default function UndianSessionDetailScreen() {
           </ThemedView>
         </View>
       </Modal>
+
+      {/* Modal Konfirmasi Hapus Hasil */}
+      <Modal visible={!!deleteResultTarget} transparent animationType="fade">
+        <View style={styles.confirmOverlay}>
+          <ThemedView type="card" style={[styles.confirmCard, { borderColor }]}>
+            <View style={[styles.confirmIcon, { backgroundColor: dangerColor + '18' }]}>
+              <Ionicons name="trash-outline" size={32} color={dangerColor} />
+            </View>
+            
+            <ThemedText type="defaultSemiBold" style={{ fontSize: 20, textAlign: 'center', marginBottom: 8 }}>
+              Hapus Hasil Undian
+            </ThemedText>
+            
+            <ThemedText style={{ fontSize: 18, fontWeight: '600', textAlign: 'center', marginBottom: 16, color: dangerColor }}>
+              {deleteResultTarget?.winnerName}
+            </ThemedText>
+            
+            <ThemedText type="muted" style={{ fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+              Apakah Anda yakin ingin menghapus {deleteResultTarget?.winnerName} dari daftar yang sudah dapat? Tindakan ini tidak dapat dibatalkan.
+            </ThemedText>
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Pressable
+                onPress={cancelDeleteResult}
+                disabled={deletingResult}
+                style={({ pressed }) => [
+                  styles.confirmButton,
+                  { borderWidth: 1, borderColor, backgroundColor: 'transparent' },
+                  pressed && { opacity: 0.7 }
+                ]}>
+                <ThemedText style={{ fontWeight: '600', color: textColor }}>
+                  Batal
+                </ThemedText>
+              </Pressable>
+              
+              <Pressable
+                onPress={confirmDeleteResult}
+                disabled={deletingResult}
+                style={({ pressed }) => [
+                  styles.confirmButton,
+                  { backgroundColor: dangerColor },
+                  (pressed || deletingResult) && { opacity: 0.8 }
+                ]}>
+                <ThemedText style={{ fontWeight: '700', color: 'white' }}>
+                  {deletingResult ? 'Menghapus...' : 'Hapus'}
+                </ThemedText>
+              </Pressable>
+            </View>
+          </ThemedView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -587,7 +667,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
   },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, width: 90 },
+  backBtn: { 
+    width: 90, 
+    justifyContent: 'flex-start' 
+  },
+  rightSection: { 
+    width: 90, 
+    alignItems: 'flex-end' 
+  },
   editBtn: {
     width: 36,
     height: 36,
@@ -595,7 +682,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  scroll: { padding: 20, paddingBottom: 100, gap: 16 },
+  scroll: { padding: 20, paddingBottom: 100 },
   arrowNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -667,20 +754,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  memberAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   winCountBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
+    minWidth: 80,
   },
   fabContainer: {
     position: 'absolute',

@@ -1,6 +1,6 @@
 export type KasTxType = 'MASUK' | 'KELUAR';
 
-export type KasBookType = 'STANDARD' | 'PERIODIK';
+export type KasBookType = 'STANDARD' | 'PERIODIK' | 'KOLEKTIF';
 export type PeriodType = 'MONTHLY' | 'WEEKLY';
 
 export type KasMember = {
@@ -8,10 +8,16 @@ export type KasMember = {
   nama: string;
 };
 
+export type KolektifItem = {
+  id: string;       // unique id item
+  nama: string;     // nama item, e.g. "Kaos Hitam"
+  nominal: number;  // target setor per anggota
+};
+
 export type KasBook = {
   id: string;
   nama: string;
-  tipe?: KasBookType; // Optional for backward compatibility, defaults to STANDARD
+  tipe?: KasBookType;
   periodConfig?: {
     tipe: PeriodType;
     nominal: number;
@@ -19,6 +25,8 @@ export type KasBook = {
   periodRates?: Record<string, number>;
   members?: KasMember[];
   categories?: string[];
+  kolektifItems?: KolektifItem[]; // item-item untuk buku kolektif
+  editorIds?: string[];
   createdAt: number;
   updatedAt: number;
 };

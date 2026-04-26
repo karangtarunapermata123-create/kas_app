@@ -101,6 +101,7 @@ function AppContent() {
         />
         <Stack.Screen name="kas-detail/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="kas-detail/report" options={{ headerShown: false }} />
+        <Stack.Screen name="kas-detail/edit-members" options={{ headerShown: false }} />
         <Stack.Screen name="absensi/event-detail" options={{ headerShown: false }} />
         <Stack.Screen name="absensi/session-detail" options={{ headerShown: false }} />
         <Stack.Screen name="absensi/year-detail" options={{ headerShown: false }} />
@@ -108,6 +109,7 @@ function AppContent() {
         <Stack.Screen name="undian/undian-members" options={{ headerShown: false }} />
         <Stack.Screen name="admin/kelola-anggota" options={{ headerShown: false }} />
         <Stack.Screen name="admin/kelola-buku-kas" options={{ headerShown: false }} />
+        <Stack.Screen name="admin/edit-kas-members" options={{ headerShown: false }} />
         <Stack.Screen name="admin/pengaturan-akun" options={{ headerShown: false }} />
         <Stack.Screen name="admin/pengaturan-tema" options={{ headerShown: false }} />
       </Stack>

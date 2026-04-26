@@ -39,21 +39,25 @@ export async function loadKasState(): Promise<KasState> {
 
 export async function saveKasState(state: KasState): Promise<void> {
   try {
-    const [booksRes, txsRes, metaRes] = await Promise.all([
+    const [booksRes, metaRes] = await Promise.all([
       state.books.length > 0
         ? supabase.from('books').upsert(state.books.map(bookToRow))
-        : Promise.resolve({ error: null }),
-      state.txs.length > 0
-        ? supabase.from('txs').upsert(state.txs.map(txToRow))
         : Promise.resolve({ error: null }),
       supabase.from('meta').upsert({ key: 'activeKasId', value: state.activeKasId }),
     ]);
     if (booksRes.error) console.error('books upsert error:', JSON.stringify(booksRes.error));
-    if (txsRes.error) console.error('txs upsert error:', JSON.stringify(txsRes.error));
     if (metaRes.error) console.error('meta upsert error:', JSON.stringify(metaRes.error));
   } catch (e) {
     console.error('saveKasState error:', e);
     throw e;
+  }
+}
+
+export async function upsertTxToDB(tx: KasTx): Promise<void> {
+  const { error } = await supabase.from('txs').upsert(txToRow(tx));
+  if (error) {
+    console.error('tx upsert error:', JSON.stringify(error));
+    throw error;
   }
 }
 
@@ -83,6 +87,8 @@ export function bookToRow(b: KasBook) {
     period_rates: b.periodRates ?? null,
     members: b.members ?? null,
     categories: b.categories ?? null,
+    editor_ids: b.editorIds ?? null,
+    kolektif_items: b.kolektifItems ?? null,
     created_at: b.createdAt,
     updated_at: b.updatedAt,
   };
@@ -97,6 +103,8 @@ export function rowToBook(row: any): KasBook {
     periodRates: row.period_rates,
     members: row.members,
     categories: row.categories,
+    editorIds: row.editor_ids ?? [],
+    kolektifItems: row.kolektif_items ?? [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

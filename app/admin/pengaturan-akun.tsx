@@ -21,7 +21,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function PengaturanAkunScreen() {
-  const { isAdmin, signOut, session, namaLengkap, setNamaLengkap } = useAdmin();
+  const { isAdmin, isSuperAdmin, signOut, session, namaLengkap, setNamaLengkap } = useAdmin();
   const { accentColor } = useAccentColor();
   const tintColor = useThemeColor({}, 'tint');
   const backgroundColor = useThemeColor({}, 'background');
@@ -109,9 +109,9 @@ export default function PengaturanAkunScreen() {
               <ThemedText type="defaultSemiBold" numberOfLines={1}>{namaLengkap ?? session?.user?.email}</ThemedText>
               <ThemedText type="muted" numberOfLines={1} style={{ fontSize: 12 }}>{session?.user?.email}</ThemedText>
             </View>
-            <View style={[styles.roleBadge, { backgroundColor: isAdmin ? accentColor + '20' : 'rgba(127,127,127,0.1)' }]}>
-              <ThemedText style={{ fontSize: 11, color: isAdmin ? accentColor : mutedColor, fontWeight: '600' }}>
-                {isAdmin ? 'Admin' : 'Member'}
+            <View style={[styles.roleBadge, { backgroundColor: isSuperAdmin ? '#ff6b35' + '20' : isAdmin ? accentColor + '20' : 'rgba(127,127,127,0.1)' }]}>
+              <ThemedText style={{ fontSize: 11, color: isSuperAdmin ? '#ff6b35' : isAdmin ? accentColor : mutedColor, fontWeight: '600' }}>
+                {isSuperAdmin ? 'Super Admin' : isAdmin ? 'Admin' : 'Member'}
               </ThemedText>
             </View>
           </View>

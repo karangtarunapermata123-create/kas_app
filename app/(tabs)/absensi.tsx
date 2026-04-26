@@ -110,6 +110,14 @@ export default function AbsensiScreen() {
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: string; label: string } | null>(null);
   const [deletingSession, setDeletingSession] = useState(false);
 
+  // Success modal for scan QR
+  const [scanSuccessVisible, setScanSuccessVisible] = useState(false);
+  const [scanSuccessData, setScanSuccessData] = useState<{
+    eventName: string;
+    sessionLabel: string;
+    userName: string;
+  } | null>(null);
+
   // Rename event
   const [renameTarget, setRenameTarget] = useState<{ id: string; nama: string } | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -177,9 +185,19 @@ export default function AbsensiScreen() {
       const userId = session?.user?.id ?? 'guest';
       const namaUser = namaLengkap ?? session?.user?.email ?? 'Pengguna';
       await absen(parsed.eventId, parsed.sessionId, userId, namaUser);
-      Alert.alert('Berhasil', 'Absensi berhasil dicatat!');
+      
+      // Find event and session info for success modal
+      const event = events.find(e => e.id === parsed.eventId);
+      const sessionInfo = sessions.find(s => s.id === parsed.sessionId);
+      
+      setScanSuccessData({
+        eventName: event?.nama || 'Kegiatan',
+        sessionLabel: sessionInfo?.label || 'Sesi',
+        userName: namaUser
+      });
+      setScanSuccessVisible(true);
     } catch (e: any) { Alert.alert('Gagal', e.message || 'QR tidak valid.'); }
-  }, [session, namaLengkap, absen]);
+  }, [session, namaLengkap, absen, events, sessions]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
@@ -639,6 +657,46 @@ export default function AbsensiScreen() {
                 <ThemedText style={styles.btnText}>{deletingSession ? 'Menghapus...' : 'Hapus'}</ThemedText>
               </Pressable>
             </View>
+          </ThemedView>
+        </View>
+      </Modal>
+
+      {/* Modal Berhasil Scan QR */}
+      <Modal visible={scanSuccessVisible} transparent animationType="fade">
+        <View style={styles.qrOverlay}>
+          <ThemedView type="card" style={[styles.qrCard, { alignItems: 'center' }]}>
+            <View style={[styles.eventIcon, { backgroundColor: successColor + '18', marginBottom: 20, width: 64, height: 64, borderRadius: 20 }]}>
+              <Ionicons name="checkmark-circle" size={32} color={successColor} />
+            </View>
+            
+            <ThemedText type="defaultSemiBold" style={{ fontSize: 20, textAlign: 'center', marginBottom: 8 }}>
+              Absensi Berhasil!
+            </ThemedText>
+            
+            <ThemedText style={{ fontSize: 16, fontWeight: '600', textAlign: 'center', marginBottom: 4, color: successColor }}>
+              {scanSuccessData?.userName}
+            </ThemedText>
+            
+            <ThemedText type="muted" style={{ fontSize: 14, textAlign: 'center', marginBottom: 6 }}>
+              {scanSuccessData?.eventName}
+            </ThemedText>
+            
+            <ThemedText type="muted" style={{ fontSize: 13, textAlign: 'center', marginBottom: 24 }}>
+              {scanSuccessData?.sessionLabel}
+            </ThemedText>
+
+            <Pressable
+              onPress={() => {
+                setScanSuccessVisible(false);
+                setScanSuccessData(null);
+              }}
+              style={({ pressed }) => [
+                styles.btn,
+                { backgroundColor: successColor, alignSelf: 'stretch', borderRadius: 16 },
+                pressed && { opacity: 0.8 }
+              ]}>
+              <ThemedText style={styles.btnText}>Tutup</ThemedText>
+            </Pressable>
           </ThemedView>
         </View>
       </Modal>

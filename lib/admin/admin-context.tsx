@@ -1,12 +1,14 @@
 import { supabase } from '@/lib/supabase/client';
 import type { Session } from '@supabase/supabase-js';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { safeAuthInit } from './auth-utils';
 
-type Role = 'admin' | 'member';
+type Role = 'super_admin' | 'admin' | 'member';
 
 type AdminContextValue = {
   ready: boolean;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   role: Role | null;
   session: Session | null;
   namaLengkap: string | null;
@@ -16,15 +18,6 @@ type AdminContextValue = {
 };
 
 const AdminContext = createContext<AdminContextValue | null>(null);
-
-async function fetchRole(userId: string): Promise<Role> {
-  const { data } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', userId)
-    .single();
-  return (data?.role as Role) ?? 'member';
-}
 
 async function fetchProfile(userId: string): Promise<{ role: Role; namaLengkap: string | null }> {
   const { data } = await supabase
@@ -53,18 +46,29 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState === 'visible') {
         try {
           const { data, error } = await supabase.auth.getSession();
-          if (error || !data.session) {
-            // Tidak ada session valid — pastikan state bersih, jangan refresh
+          if (error) {
+            console.log('Visibility change session error:', error.message);
+            // Clear invalid session
             setSession(null);
             setRole(null);
             setNamaLengkap(null);
             return;
           }
+          
+          if (!data.session) {
+            // No session available
+            setSession(null);
+            setRole(null);
+            setNamaLengkap(null);
+            return;
+          }
+          
           const { role: r, namaLengkap: nama } = await fetchProfile(data.session.user.id);
           setRole(r);
           setNamaLengkap(nama);
-        } catch {
-          // Abaikan error jaringan saat visibility change
+        } catch (err) {
+          console.log('Visibility change error (ignored):', err);
+          // Ignore network errors during visibility change
         }
       }
     };
@@ -72,14 +76,20 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
     const handleOnline = async () => {
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.log('Online session error:', error.message);
+          return;
+        }
+        
         if (data.session) {
           const { role: r, namaLengkap: nama } = await fetchProfile(data.session.user.id);
           setRole(r);
           setNamaLengkap(nama);
         }
-      } catch {
-        // Abaikan error jaringan
+      } catch (err) {
+        console.log('Online error (ignored):', err);
+        // Ignore network errors
       }
     };
     window.addEventListener('online', handleOnline);
@@ -93,31 +103,50 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        // Use safe auth initialization
+        const { session, error } = await safeAuthInit();
+        
         if (error) {
-          // Invalid/expired refresh token — clear session dan lanjut
-          await supabase.auth.signOut();
+          console.log('Auth initialization failed:', error);
           setSession(null);
           setRole(null);
+          setNamaLengkap(null);
+          setReady(true);
           return;
         }
 
         if (blockAuthEventsRef.current) {
           setSession(null);
           setRole(null);
+          setNamaLengkap(null);
+          setReady(true);
           return;
         }
 
-        setSession(data.session);
-        if (data.session?.user) {
-          const { role: r, namaLengkap: nama } = await fetchProfile(data.session.user.id);
-          setRole(r);
-          setNamaLengkap(nama);
+        setSession(session);
+        if (session?.user) {
+          try {
+            const { role: r, namaLengkap: nama } = await fetchProfile(session.user.id);
+            setRole(r);
+            setNamaLengkap(nama);
+          } catch (profileError) {
+            console.log('Profile fetch error:', profileError);
+            // Continue without profile data
+            setRole('member');
+            setNamaLengkap(null);
+          }
+        } else {
+          setRole(null);
+          setNamaLengkap(null);
         }
       } catch (err) {
         console.error('Auth initialization error:', err);
+        // Clear session on any error
+        setSession(null);
+        setRole(null);
+        setNamaLengkap(null);
       } finally {
-        // Apapun yang terjadi (error jaringan, dll), kita set ready agar app tidak loading selamanya
+        // Always set ready to prevent infinite loading
         setReady(true);
       }
     };
@@ -125,27 +154,70 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event, !!session);
+      
       if (blockAuthEventsRef.current) {
         setSession(null);
         setRole(null);
-        if (session) void supabase.auth.signOut();
+        setNamaLengkap(null);
+        if (session) {
+          try {
+            await supabase.auth.signOut();
+          } catch (e) {
+            console.log('Sign out error in blocked state:', e);
+          }
+        }
         return;
       }
-      // Token refresh gagal atau user sign out — clear semua state
-      if ((event === 'TOKEN_REFRESHED' && !session) || event === 'SIGNED_OUT') {
+      
+      // Handle token refresh failures and sign out
+      if (event === 'TOKEN_REFRESHED' && !session) {
+        console.log('Token refresh failed, clearing session');
         setSession(null);
         setRole(null);
         setNamaLengkap(null);
         return;
       }
+      
+      if (event === 'SIGNED_OUT') {
+        console.log('User signed out');
+        setSession(null);
+        setRole(null);
+        setNamaLengkap(null);
+        return;
+      }
+      
+      // Handle sign in and token refresh success
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        setSession(session);
+        if (session?.user) {
+          try {
+            const { role: r, namaLengkap: nama } = await fetchProfile(session.user.id);
+            setRole(r);
+            setNamaLengkap(nama);
+          } catch (profileError) {
+            console.log('Profile fetch error in auth change:', profileError);
+            setRole('member');
+            setNamaLengkap(null);
+          }
+        } else {
+          setRole(null);
+          setNamaLengkap(null);
+        }
+        return;
+      }
+      
+      // Handle other events
       setSession(session);
       if (session?.user) {
         try {
           const { role: r, namaLengkap: nama } = await fetchProfile(session.user.id);
           setRole(r);
           setNamaLengkap(nama);
-        } catch {
-          // Abaikan error fetch profile
+        } catch (profileError) {
+          console.log('Profile fetch error:', profileError);
+          setRole('member');
+          setNamaLengkap(null);
         }
       } else {
         setRole(null);
@@ -171,11 +243,12 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     void supabase.auth.signOut();
   }, []);
 
-  const isAdmin = role === 'admin';
+  const isAdmin = role === 'admin' || role === 'super_admin';
+  const isSuperAdmin = role === 'super_admin';
 
   const value = useMemo<AdminContextValue>(
-    () => ({ ready, isAdmin, role, session, namaLengkap, setNamaLengkap, signIn, signOut }),
-    [ready, isAdmin, role, session, namaLengkap, signIn, signOut],
+    () => ({ ready, isAdmin, isSuperAdmin, role, session, namaLengkap, setNamaLengkap, signIn, signOut }),
+    [ready, isAdmin, isSuperAdmin, role, session, namaLengkap, signIn, signOut],
   );
 
   return <AdminContext.Provider key={authEpoch} value={value}>{children}</AdminContext.Provider>;

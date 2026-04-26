@@ -28,7 +28,7 @@ export default function TransactionFormScreen() {
     defaultMonth?: string;
   }>();
   const { txsAll, activeKasId, upsertTx, deleteTx, books, updateCategories } = useKas();
-  const { isAdmin } = useAdmin();
+  const { isSuperAdmin } = useAdmin();
   const tintColor = useThemeColor({}, 'tint');
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -310,6 +310,7 @@ export default function TransactionFormScreen() {
             </Field>
 
             <View style={styles.actions}>
+              {isSuperAdmin && (
               <Pressable
                 onPress={onSave}
                 style={({ pressed }) => [styles.btn, styles.btnPrimary, { backgroundColor: tintColor }, pressed && { opacity: 0.8 }]}>
@@ -317,8 +318,9 @@ export default function TransactionFormScreen() {
                   {isEdit ? 'Simpan Perubahan' : 'Tambah Transaksi'}
                 </ThemedText>
               </Pressable>
+              )}
 
-              {isEdit && isTransferIn && (
+              {isEdit && isTransferIn && isSuperAdmin && (
                 <Pressable
                   onPress={onReturnTransfer}
                   style={({ pressed }) => [styles.btn, styles.btnDanger, { borderColor: tintColor }, pressed && { opacity: 0.8 }]}>
@@ -332,7 +334,8 @@ export default function TransactionFormScreen() {
               {isEdit && (
                 <Pressable
                   onPress={onDelete}
-                  style={({ pressed }) => [styles.btn, styles.btnDanger, { borderColor: dangerColor }, pressed && { opacity: 0.8 }]}>
+                  disabled={!isSuperAdmin}
+                  style={({ pressed }) => [styles.btn, styles.btnDanger, { borderColor: dangerColor, opacity: isSuperAdmin ? 1 : 0.4 }, pressed && { opacity: 0.8 }]}>
                   <Ionicons name="trash-outline" size={20} color={dangerColor} />
                   <ThemedText type="defaultSemiBold" style={{ color: dangerColor }}>
                     Hapus Transaksi

@@ -31,7 +31,7 @@ const styles = StyleSheet.create({
 });
 
 export default function AdminScreen() {
-  const { isAdmin, session, namaLengkap } = useAdmin();
+  const { isAdmin, isSuperAdmin, session, namaLengkap } = useAdmin();
   const { accentColor } = useAccentColor();
 
   const tintColor = useThemeColor({}, 'tint');
@@ -55,9 +55,9 @@ export default function AdminScreen() {
                 <ThemedText type="muted" numberOfLines={1} style={{ fontSize: 12 }}>{session?.user?.email}</ThemedText>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={[styles.roleBadge, { backgroundColor: isAdmin ? accentColor + '20' : 'rgba(127,127,127,0.1)' }]}>
-                  <ThemedText style={{ fontSize: 11, color: isAdmin ? accentColor : mutedColor, fontWeight: '600' }}>
-                    {isAdmin ? 'Admin' : 'Member'}
+                <View style={[styles.roleBadge, { backgroundColor: isSuperAdmin ? '#ff6b35' + '20' : isAdmin ? accentColor + '20' : 'rgba(127,127,127,0.1)' }]}>
+                  <ThemedText style={{ fontSize: 11, color: isSuperAdmin ? '#ff6b35' : isAdmin ? accentColor : mutedColor, fontWeight: '600' }}>
+                    {isSuperAdmin ? 'Super Admin' : isAdmin ? 'Admin' : 'Member'}
                   </ThemedText>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={mutedColor} />
@@ -93,6 +93,7 @@ export default function AdminScreen() {
             </ThemedView>
           </Pressable>
         )}
+
 
 
       </ScrollView>

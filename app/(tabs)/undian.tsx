@@ -227,7 +227,7 @@ export default function UndianScreen() {
     // Check if session already has a result
     const existingResult = results.find(r => r.session_id === sessionId);
     if (existingResult) {
-      return Alert.alert('Sudah Diundi', 'Sesi ini sudah pernah diundi.');
+      return Alert.alert('Sudah Dapat', 'Sesi ini sudah pernah diundi.');
     }
 
     setDrawingSession(sessionId);
@@ -313,13 +313,6 @@ export default function UndianScreen() {
         <View>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>Daftar Sesi Undian</ThemedText>
-            {isAdmin && (
-              <View style={[styles.roleBadge, { backgroundColor: tintColor + '20' }]}>
-                <ThemedText style={{ fontSize: 11, color: tintColor, fontWeight: '600' }}>
-                  Admin
-                </ThemedText>
-              </View>
-            )}
           </View>
 
           {loading ? (
@@ -335,7 +328,7 @@ export default function UndianScreen() {
               </ThemedText>
             </View>
           ) : (
-            <View style={{ gap: 10 }}>
+            <View style={{ gap: 10, marginTop: 12 }}>
               {sessions.map(session => {
                 const result = getSessionResult(session.id);
                 const sessionMembers = getSessionMembers(session.id);
@@ -361,7 +354,7 @@ export default function UndianScreen() {
                       <View style={{ flex: 1 }}>
                         <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }}>{session.label}</ThemedText>
                         <ThemedText type="muted" style={{ fontSize: 12 }}>
-                          {result ? `Pemenang: ${result.winner_name}` : `${sessionMembers.length} peserta`}
+                          {result ? `Terakhir dapat: ${result.winner_name}` : `${sessionMembers.length} peserta`}
                         </ThemedText>
                       </View>
                     </Pressable>
@@ -550,7 +543,6 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { padding: 20, paddingBottom: 40, gap: 16 },
   card: { borderRadius: 20, padding: 20, borderWidth: 1 },
-  roleBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, marginTop: 4 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   addBtn: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   empty: { alignItems: 'center', paddingVertical: 32 },

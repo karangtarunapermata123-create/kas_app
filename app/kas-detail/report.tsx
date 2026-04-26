@@ -19,7 +19,7 @@ const MONTHS = [
 export default function KasDetailReportScreen() {
   const { kasId } = useLocalSearchParams<{ kasId: string }>();
   const { books, txsAll, upsertTx } = useKas();
-  const { isAdmin } = useAdmin();
+  const { isSuperAdmin } = useAdmin();
 
   const tintColor = useThemeColor({}, 'tint');
   const backgroundColor = useThemeColor({}, 'background');
@@ -175,7 +175,7 @@ export default function KasDetailReportScreen() {
   const keluarPercent = totalVolume > 0 ? (summary.keluar / totalVolume) * 100 : 0;
 
   const openTransfer = (monthIndex: number, cat: string, amount: number) => {
-    if (!isAdmin) return;
+    if (!isSuperAdmin) return;
     if (!isPeriodik) return;
     if (amount <= 0) return;
     if (standardBooks.length === 0) {
@@ -332,7 +332,7 @@ export default function KasDetailReportScreen() {
                     const net = val.masuk - val.keluar;
                     const alreadyTransferred = !!m.transferred?.[cat];
                     const transferredToName = m.transferredTo?.[cat] ?? '';
-                    const canTransfer = isAdmin && !alreadyTransferred && net > 0 && standardBooks.length > 0;
+                    const canTransfer = isSuperAdmin && !alreadyTransferred && net > 0 && standardBooks.length > 0;
                     return (
                       <ThemedView key={`${m.monthIndex}-${cat}`} type="card" style={s.categoryCard}>
                         <View style={s.categoryInfo}>

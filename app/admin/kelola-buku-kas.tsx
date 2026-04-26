@@ -4,7 +4,9 @@ import { useAccentColor } from '@/hooks/use-accent-color';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAdmin } from '@/lib/admin/admin-context';
 import { useKas } from '@/lib/kas/kas-context';
+import { clearPendingMembers, getPendingMembers } from '@/lib/kas/temp-members-store';
 import type { KasBookType, PeriodType } from '@/lib/kas/types';
+import { formatRupiah } from '@/lib/kas/types';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -111,6 +113,10 @@ const styles = StyleSheet.create({
   memberAvatar: { width: 32, height: 32, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 10 },
   memberEditInput: { flex: 1, fontSize: 14, paddingVertical: 6 },
   memberDeleteBtn: { width: 34, height: 34, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  memberPreviewCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, marginBottom: 6, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
+  editMembersBtn: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, marginBottom: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
+  editMembersBtnIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  infoCard: { flexDirection: 'row', alignItems: 'flex-start', borderRadius: 12, marginBottom: 16, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
   addRow: { flexDirection: 'row', gap: 10, marginTop: 8, alignItems: 'center' },
   addInput: { flex: 1, borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   addInputSmall: { width: 110, borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12, fontSize: 14 },
@@ -132,13 +138,13 @@ const styles = StyleSheet.create({
 });
 
 export default function KelolaBukuKasScreen() {
-  const { isAdmin } = useAdmin();
+  const { isSuperAdmin } = useAdmin();
   const { accentColor } = useAccentColor();
   const {
     books,
     addKas, deleteKas, renameKas,
     addMember, removeMember, updateMember,
-    updateCategories, updatePeriodRates,
+    updateCategories, updatePeriodRates, updateEditorIds, updateKolektifItems,
   } = useKas();
 
   const kbHeight = useKeyboardHeight();
@@ -151,18 +157,75 @@ export default function KelolaBukuKasScreen() {
   const mutedColor = useThemeColor({}, 'muted');
   const borderColor = useThemeColor({}, 'border');
   const dangerColor = useThemeColor({}, 'danger');
+  const successColor = (useThemeColor({}, 'success') as string | undefined) ?? '#22c55e';
 
   // ── Edit Buku Kas ──
   const [editBookId, setEditBookId] = useState<string | null>(null);
   const editBook = books.find(b => b.id === editBookId);
   const [editName, setEditName] = useState('');
-  const [editTab, setEditTab] = useState<'name' | 'members' | 'rates'>('members');
+  const [editTab, setEditTab] = useState<'name' | 'members' | 'rates' | 'access'>('name');
   const [editMemberName, setEditMemberName] = useState('');
   const [ratesInput, setRatesInput] = useState<Record<string, string>>({});
   const [categoryNameEdits, setCategoryNameEdits] = useState<Record<string, string>>({});
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryNominal, setNewCategoryNominal] = useState('');
   const newCategoryNameRef = useRef<TextInput>(null);
+
+  // ── Edit Item Kolektif ──
+  const [newKolektifItemName, setNewKolektifItemName] = useState('');
+  const [newKolektifItemNominal, setNewKolektifItemNominal] = useState('');
+  const newKolektifItemNameRef = useRef<TextInput>(null);
+
+  const onAddKolektifItem = useCallback(async () => {
+    if (!editBookId || !editBook) return;
+    const name = newKolektifItemName.trim();
+    if (!name) return;
+    const nominal = parseInt(newKolektifItemNominal.replace(/\D/g, ''), 10);
+    const newItem: KolektifItem = {
+      id: `item_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      nama: name,
+      nominal: isNaN(nominal) ? 0 : nominal,
+    };
+    const current = editBook.kolektifItems || [];
+    await updateKolektifItems(editBookId, [...current, newItem]);
+    setNewKolektifItemName('');
+    setNewKolektifItemNominal('');
+    setTimeout(() => newKolektifItemNameRef.current?.focus(), 50);
+  }, [editBookId, editBook, newKolektifItemName, newKolektifItemNominal, updateKolektifItems]);
+
+  const onRemoveKolektifItem = useCallback(async (itemId: string) => {
+    if (!editBookId || !editBook) return;
+    const next = (editBook.kolektifItems || []).filter(i => i.id !== itemId);
+    await updateKolektifItems(editBookId, next);
+  }, [editBookId, editBook, updateKolektifItems]);
+
+  // ── Editor Access ──
+  const [allProfiles, setAllProfiles] = useState<{ id: string; nama_lengkap: string | null; email: string | null; role: string }[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+
+  // Load profiles saat modal edit dibuka ke tab access
+  const loadProfiles = useCallback(async () => {
+    if (allProfiles.length > 0) return; // sudah di-load
+    setProfilesLoading(true);
+    try {
+      const { supabase } = await import('@/lib/supabase/client');
+      const { data } = await supabase.from('profiles').select('id, nama_lengkap, email, role').order('nama_lengkap');
+      setAllProfiles(data ?? []);
+    } catch (e) {
+      console.error('load profiles error:', e);
+    } finally {
+      setProfilesLoading(false);
+    }
+  }, [allProfiles.length]);
+
+  const onToggleEditor = useCallback(async (userId: string) => {
+    if (!editBookId || !editBook) return;
+    const current = editBook.editorIds ?? [];
+    const next = current.includes(userId)
+      ? current.filter(id => id !== userId)
+      : [...current, userId];
+    await updateEditorIds(editBookId, next);
+  }, [editBookId, editBook, updateEditorIds]);
 
   // ── Tambah Buku Kas ──
   const [addVisible, setAddVisible] = useState(false);
@@ -176,6 +239,38 @@ export default function KelolaBukuKasScreen() {
   const addKasCatNameRef = useRef<TextInput>(null);
   const [addKasCatName, setAddKasCatName] = useState('');
   const [addKasCatNominal, setAddKasCatNominal] = useState('');
+
+  // Saat halaman ini kembali ke focus, cek apakah ada pending members dari halaman edit anggota
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const pending = getPendingMembers();
+      if (pending !== null) {
+        clearPendingMembers();
+        if (pending.mode === 'add') {
+          // Mode tambah buku kas baru
+          setNewKasMembers(pending.members);
+          setAddVisible(true);
+        } else if (pending.mode === 'edit' && pending.kasId) {
+          // Mode edit buku kas existing — sync members ke kas context
+          const book = books.find(b => b.id === pending.kasId);
+          if (book) {
+            const currentNames = new Set((book.members || []).map(m => m.nama));
+            const newNames = new Set(pending.members);
+            // Hapus yang tidak ada di pilihan baru
+            (book.members || []).forEach(m => {
+              if (!newNames.has(m.nama)) removeMember(pending.kasId!, m.id);
+            });
+            // Tambah yang belum ada
+            pending.members.forEach(name => {
+              if (!currentNames.has(name)) addMember(pending.kasId!, name);
+            });
+          }
+          setEditBookId(pending.kasId);
+        }
+      }
+    }, 300);
+    return () => clearInterval(interval);
+  }, [books, addMember, removeMember]);
 
   // ── Hapus Buku Kas ──
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; nama: string } | null>(null);
@@ -274,6 +369,18 @@ export default function KelolaBukuKasScreen() {
         const categories = catsEntries.map(c => c.name);
         const periodRates = Object.fromEntries(catsEntries.map(c => [c.name, c.nominal]));
         await addKas(name, newKasType, { tipe: newKasPeriodType, nominal: firstNominal }, categories, newKasMembers, periodRates);
+      } else if (newKasType === 'KOLEKTIF') {
+        const itemEntries = newKasCats
+          .map(c => ({ name: c.name.trim(), nominal: parseInt(String(c.nominal).replace(/\D/g, ''), 10) }))
+          .filter(c => c.name.length > 0);
+        if (itemEntries.length === 0) return Alert.alert('Validasi', 'Tambahkan minimal satu item kolektif.');
+        if (newKasMembers.length === 0) return Alert.alert('Validasi', 'Tambahkan minimal satu anggota.');
+        const kolektifItems = itemEntries.map(c => ({
+          id: `item_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}_${c.name.replace(/\s/g, '')}`,
+          nama: c.name,
+          nominal: isNaN(c.nominal) ? 0 : c.nominal,
+        }));
+        await addKas(name, newKasType, undefined, [], newKasMembers, {}, kolektifItems);
       } else {
         await addKas(name, newKasType);
       }
@@ -291,7 +398,7 @@ export default function KelolaBukuKasScreen() {
     } catch (e: any) { Alert.alert('Gagal', e?.message ?? String(e)); }
   }, [deleteTarget, deleteKas]);
 
-  if (!isAdmin) {
+  if (!isSuperAdmin) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
         <View style={[styles.header, { borderBottomColor: borderColor }]}>
@@ -304,8 +411,14 @@ export default function KelolaBukuKasScreen() {
           </View>
           <View style={styles.headerRight} />
         </View>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ThemedText type="muted">Akses ditolak.</ThemedText>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+          <Ionicons name="shield-outline" size={64} color={mutedColor} style={{ marginBottom: 16 }} />
+          <ThemedText type="defaultSemiBold" style={{ fontSize: 18, marginBottom: 8, textAlign: 'center' }}>
+            Akses Terbatas
+          </ThemedText>
+          <ThemedText type="muted" style={{ textAlign: 'center', lineHeight: 20 }}>
+            Hanya Super Admin yang dapat mengelola buku kas. Hubungi administrator untuk mendapatkan akses.
+          </ThemedText>
         </View>
       </SafeAreaView>
     );
@@ -349,6 +462,8 @@ export default function KelolaBukuKasScreen() {
                   <ThemedText style={{ fontSize: 11, color: mutedColor, marginTop: 1 }}>
                     {b.tipe === 'PERIODIK'
                       ? `Periodik · ${b.periodConfig?.tipe === 'WEEKLY' ? 'Mingguan' : 'Bulanan'}`
+                      : b.tipe === 'KOLEKTIF'
+                      ? `Kolektif · ${b.kolektifItems?.length ?? 0} item · ${b.members?.length ?? 0} anggota`
                       : 'Standard'}
                   </ThemedText>
                 </View>
@@ -397,29 +512,60 @@ export default function KelolaBukuKasScreen() {
             </View>
             {editBook && (
               <ThemedText type="muted" style={styles.modalSubtitle}>
-                {editBook.nama} · {editBook.tipe === 'PERIODIK' ? 'Periodik' : 'Standard'}
+                {editBook.nama} · {editBook.tipe === 'PERIODIK' ? 'Periodik' : editBook.tipe === 'KOLEKTIF' ? 'Kolektif' : 'Standard'}
               </ThemedText>
             )}
 
-            {/* Segment tabs untuk PERIODIK */}
-            {editBook?.tipe === 'PERIODIK' && (
-              <View style={styles.segment}>
-                {([
+            {/* Segment tabs */}
+            <View style={styles.segment}>
+              {editBook?.tipe === 'PERIODIK' ? (
+                ([
                   { key: 'name', label: 'Nama', icon: 'text-outline' },
                   { key: 'members', label: 'Anggota', icon: 'people-outline' },
                   { key: 'rates', label: 'Kategori', icon: 'pricetags-outline' },
+                  { key: 'access', label: 'Akses', icon: 'shield-checkmark-outline' },
                 ] as const).map(tab => {
                   const isActive = editTab === tab.key;
                   return (
-                    <Pressable key={tab.key} onPress={() => setEditTab(tab.key)}
+                    <Pressable key={tab.key} onPress={() => { setEditTab(tab.key); if (tab.key === 'access') loadProfiles(); }}
                       style={[styles.segmentBtn, isActive && { backgroundColor: tintColor }]}>
                       <Ionicons name={tab.icon as any} size={13} color={isActive ? 'white' : mutedColor} />
                       <ThemedText style={[styles.segmentText, { color: isActive ? 'white' : mutedColor }]}>{tab.label}</ThemedText>
                     </Pressable>
                   );
-                })}
-              </View>
-            )}
+                })
+              ) : editBook?.tipe === 'KOLEKTIF' ? (
+                ([
+                  { key: 'name', label: 'Nama', icon: 'text-outline' },
+                  { key: 'members', label: 'Anggota', icon: 'people-outline' },
+                  { key: 'rates', label: 'Item', icon: 'basket-outline' },
+                  { key: 'access', label: 'Akses', icon: 'shield-checkmark-outline' },
+                ] as const).map(tab => {
+                  const isActive = editTab === tab.key;
+                  return (
+                    <Pressable key={tab.key} onPress={() => { setEditTab(tab.key); if (tab.key === 'access') loadProfiles(); }}
+                      style={[styles.segmentBtn, isActive && { backgroundColor: tintColor }]}>
+                      <Ionicons name={tab.icon as any} size={13} color={isActive ? 'white' : mutedColor} />
+                      <ThemedText style={[styles.segmentText, { color: isActive ? 'white' : mutedColor }]}>{tab.label}</ThemedText>
+                    </Pressable>
+                  );
+                })
+              ) : (
+                ([
+                  { key: 'name', label: 'Nama', icon: 'text-outline' },
+                  { key: 'access', label: 'Akses', icon: 'shield-checkmark-outline' },
+                ] as const).map(tab => {
+                  const isActive = editTab === tab.key;
+                  return (
+                    <Pressable key={tab.key} onPress={() => { setEditTab(tab.key); if (tab.key === 'access') loadProfiles(); }}
+                      style={[styles.segmentBtn, isActive && { backgroundColor: tintColor }]}>
+                      <Ionicons name={tab.icon as any} size={13} color={isActive ? 'white' : mutedColor} />
+                      <ThemedText style={[styles.segmentText, { color: isActive ? 'white' : mutedColor }]}>{tab.label}</ThemedText>
+                    </Pressable>
+                  );
+                })
+              )}
+            </View>
 
             <ScrollView
               contentContainerStyle={[styles.modalScrollContent, { paddingBottom: kbHeight > 0 ? kbHeight + 24 : 40 }]}
@@ -430,7 +576,7 @@ export default function KelolaBukuKasScreen() {
               {editBook && (
                 <View>
                   {/* Tab Nama */}
-                  {(editBook.tipe !== 'PERIODIK' || editTab === 'name') && (
+                  {editTab === 'name' && (
                     <View>
                       <ThemedText type="muted" style={styles.sectionLabel}>Nama Buku</ThemedText>
                       <View style={styles.editNameRow}>
@@ -455,44 +601,77 @@ export default function KelolaBukuKasScreen() {
                       <ThemedText type="muted" style={styles.sectionLabel}>
                         Daftar Anggota ({editBook.members?.length ?? 0})
                       </ThemedText>
-                      {(editBook.members || []).length === 0 && (
+                      
+                      {/* Tombol Edit Anggota dengan Checklist */}
+                      <Pressable
+                        onPress={() => {
+                          closeEdit();
+                          router.push({ 
+                            pathname: '/admin/edit-kas-members', 
+                            params: { 
+                              selectedMembers: JSON.stringify((editBook.members || []).map(m => m.nama)),
+                              mode: 'edit',
+                              kasId: editBook.id,
+                            } 
+                          });
+                        }}
+                        style={({ pressed }) => [
+                          styles.editMembersBtn,
+                          { backgroundColor: tintColor + '12', borderColor: tintColor },
+                          pressed && { opacity: 0.8 }
+                        ]}>
+                        <View style={[styles.editMembersBtnIcon, { backgroundColor: tintColor }]}>
+                          <Ionicons name="people" size={18} color="white" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText type="defaultSemiBold" style={{ color: tintColor, fontSize: 15 }}>
+                            Edit Anggota
+                          </ThemedText>
+                          <ThemedText type="muted" style={{ fontSize: 12 }}>
+                            Pilih anggota dari daftar akun yang ada
+                          </ThemedText>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={tintColor} />
+                      </Pressable>
+
+                      {/* Preview Anggota Saat Ini */}
+                      {(editBook.members || []).length === 0 ? (
                         <View style={{ alignItems: 'center', paddingVertical: 20, gap: 8 }}>
                           <Ionicons name="people-outline" size={32} color={mutedColor} />
                           <ThemedText type="muted" style={{ fontSize: 13 }}>Belum ada anggota</ThemedText>
+                          <ThemedText type="muted" style={{ fontSize: 12, textAlign: 'center' }}>
+                            Gunakan tombol "Edit Anggota" di atas untuk menambahkan
+                          </ThemedText>
+                        </View>
+                      ) : (
+                        <View style={{ marginTop: 16 }}>
+                          <ThemedText type="muted" style={[styles.sectionLabel, { marginBottom: 8 }]}>
+                            Anggota Saat Ini
+                          </ThemedText>
+                          {(editBook.members || []).slice(0, 5).map(m => (
+                            <View key={m.id} style={[styles.memberPreviewCard, { borderColor, backgroundColor: 'rgba(127,127,127,0.03)' }]}>
+                              <View style={[styles.memberAvatar, { backgroundColor: tintColor + '15' }]}>
+                                <ThemedText style={{ fontSize: 13, fontWeight: '700', color: tintColor }}>
+                                  {m.nama.charAt(0).toUpperCase()}
+                                </ThemedText>
+                              </View>
+                              <ThemedText style={{ color: textColor, fontSize: 14 }}>{m.nama}</ThemedText>
+                            </View>
+                          ))}
+                          {(editBook.members || []).length > 5 && (
+                            <View style={[styles.memberPreviewCard, { borderColor, backgroundColor: 'rgba(127,127,127,0.03)' }]}>
+                              <View style={[styles.memberAvatar, { backgroundColor: mutedColor + '15' }]}>
+                                <ThemedText style={{ fontSize: 13, fontWeight: '700', color: mutedColor }}>
+                                  +{(editBook.members || []).length - 5}
+                                </ThemedText>
+                              </View>
+                              <ThemedText style={{ color: mutedColor, fontSize: 14 }}>
+                                dan {(editBook.members || []).length - 5} anggota lainnya
+                              </ThemedText>
+                            </View>
+                          )}
                         </View>
                       )}
-                      {(editBook.members || []).map(m => (
-                        <View key={m.id} style={[styles.memberCard, { borderColor, backgroundColor: 'rgba(127,127,127,0.03)' }]}>
-                          <View style={[styles.memberAvatar, { backgroundColor: tintColor + '15' }]}>
-                            <ThemedText style={{ fontSize: 13, fontWeight: '700', color: tintColor }}>
-                              {m.nama.charAt(0).toUpperCase()}
-                            </ThemedText>
-                          </View>
-                          <TextInput
-                            defaultValue={m.nama}
-                            onEndEditing={e => updateMember(editBook.id, m.id, e.nativeEvent.text)}
-                            placeholderTextColor={mutedColor}
-                            style={[styles.memberEditInput, { color: textColor }]}
-                          />
-                          <Pressable onPress={() => removeMember(editBook.id, m.id)}
-                            style={({ pressed }) => [styles.memberDeleteBtn, { backgroundColor: dangerColor + '12' }, pressed && { opacity: 0.6 }]}>
-                            <Ionicons name="trash-outline" size={16} color={dangerColor} />
-                          </Pressable>
-                        </View>
-                      ))}
-                      <View style={styles.addRow}>
-                        <TextInput
-                          value={editMemberName}
-                          onChangeText={setEditMemberName}
-                          placeholder="Nama anggota baru..."
-                          placeholderTextColor={mutedColor}
-                          style={[styles.addInput, { borderColor, color: textColor, backgroundColor: 'rgba(127,127,127,0.04)' }]}
-                        />
-                        <Pressable onPress={onAddMember}
-                          style={({ pressed }) => [styles.addActionBtn, { backgroundColor: tintColor }, pressed && { opacity: 0.8 }]}>
-                          <Ionicons name="person-add" size={20} color="white" />
-                        </Pressable>
-                      </View>
                     </View>
                   )}
 
@@ -557,6 +736,181 @@ export default function KelolaBukuKasScreen() {
                       </Pressable>
                     </View>
                   )}
+
+                  {/* Tab Anggota (KOLEKTIF) */}
+                  {editBook.tipe === 'KOLEKTIF' && editTab === 'members' && (
+                    <View>
+                      <ThemedText type="muted" style={styles.sectionLabel}>Daftar Anggota ({editBook.members?.length ?? 0})</ThemedText>
+                      <Pressable
+                        onPress={() => {
+                          closeEdit();
+                          router.push({
+                            pathname: '/admin/edit-kas-members',
+                            params: {
+                              selectedMembers: JSON.stringify((editBook.members || []).map(m => m.nama)),
+                              mode: 'edit',
+                              kasId: editBook.id,
+                            }
+                          });
+                        }}
+                        style={({ pressed }) => [
+                          styles.editMembersBtn,
+                          { backgroundColor: tintColor + '12', borderColor: tintColor },
+                          pressed && { opacity: 0.8 }
+                        ]}>
+                        <View style={[styles.editMembersBtnIcon, { backgroundColor: tintColor }]}>
+                          <Ionicons name="people" size={18} color="white" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText type="defaultSemiBold" style={{ color: tintColor, fontSize: 15 }}>Edit Anggota</ThemedText>
+                          <ThemedText type="muted" style={{ fontSize: 12 }}>Pilih anggota dari daftar akun</ThemedText>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={tintColor} />
+                      </Pressable>
+                      {(editBook.members || []).length > 0 && (
+                        <View style={{ marginTop: 8, gap: 6 }}>
+                          {(editBook.members || []).slice(0, 4).map(m => (
+                            <View key={m.id} style={[styles.memberPreviewCard, { borderColor, backgroundColor: 'rgba(127,127,127,0.03)' }]}>
+                              <View style={[styles.memberAvatar, { backgroundColor: tintColor + '15' }]}>
+                                <ThemedText style={{ fontSize: 13, fontWeight: '700', color: tintColor }}>{m.nama.charAt(0).toUpperCase()}</ThemedText>
+                              </View>
+                              <ThemedText style={{ color: textColor, fontSize: 14 }}>{m.nama}</ThemedText>
+                            </View>
+                          ))}
+                          {(editBook.members || []).length > 4 && (
+                            <ThemedText type="muted" style={{ fontSize: 12, textAlign: 'center' }}>+{(editBook.members || []).length - 4} lainnya</ThemedText>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Tab Item (KOLEKTIF) */}
+                  {editBook.tipe === 'KOLEKTIF' && editTab === 'rates' && (
+                    <View>
+                      <ThemedText type="muted" style={styles.sectionLabel}>Item Kolektif</ThemedText>
+
+                      {/* Daftar item yang sudah ada */}
+                      {(editBook.kolektifItems || []).length === 0 ? (
+                        <View style={{ alignItems: 'center', paddingVertical: 20, gap: 6 }}>
+                          <Ionicons name="basket-outline" size={32} color={mutedColor} />
+                          <ThemedText type="muted" style={{ fontSize: 13 }}>Belum ada item</ThemedText>
+                        </View>
+                      ) : (
+                        (editBook.kolektifItems || []).map((item) => (
+                          <View key={item.id} style={[styles.categoryCard, { borderColor }]}>
+                            <View style={[styles.categoryCardInner, { backgroundColor: 'rgba(127,127,127,0.03)' }]}>
+                              <View style={[styles.memberAvatar, { backgroundColor: tintColor + '12', marginRight: 0 }]}>
+                                <Ionicons name="basket" size={14} color={tintColor} />
+                              </View>
+                              <ThemedText style={[styles.categoryNameInput, { color: textColor }]}>{item.nama}</ThemedText>
+                              <ThemedText style={[styles.categoryNominalInput, { color: mutedColor }]}>{formatRupiah(item.nominal)}</ThemedText>
+                              <Pressable
+                                onPress={() => onRemoveKolektifItem(item.id)}
+                                style={({ pressed }) => [styles.categoryDeleteBtn, { backgroundColor: dangerColor + '12' }, pressed && { opacity: 0.6 }]}>
+                                <Ionicons name="trash-outline" size={15} color={dangerColor} />
+                              </Pressable>
+                            </View>
+                          </View>
+                        ))
+                      )}
+
+                      {/* Form tambah item baru */}
+                      <View style={styles.addRow}>
+                        <TextInput
+                          ref={newKolektifItemNameRef}
+                          value={newKolektifItemName}
+                          onChangeText={setNewKolektifItemName}
+                          placeholder="Nama item..."
+                          placeholderTextColor={mutedColor}
+                          style={[styles.addInput, { borderColor, color: textColor, backgroundColor: 'rgba(127,127,127,0.04)' }]}
+                        />
+                        <TextInput
+                          value={newKolektifItemNominal}
+                          onChangeText={setNewKolektifItemNominal}
+                          placeholder="Nominal"
+                          placeholderTextColor={mutedColor}
+                          keyboardType="number-pad"
+                          style={[styles.addInputSmall, { borderColor, color: textColor, backgroundColor: 'rgba(127,127,127,0.04)' }]}
+                        />
+                        <Pressable
+                          onPress={onAddKolektifItem}
+                          style={({ pressed }) => [styles.addActionBtn, { backgroundColor: tintColor }, pressed && { opacity: 0.8 }]}>
+                          <Ionicons name="add" size={22} color="white" />
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Tab Akses */}
+                  {editTab === 'access' && (
+                    <View>
+                      <ThemedText type="muted" style={styles.sectionLabel}>Izin Edit Transaksi</ThemedText>
+                      <View style={[styles.infoCard, { borderColor: tintColor + '40', backgroundColor: tintColor + '08' }]}>
+                        <Ionicons name="information-circle-outline" size={16} color={tintColor} />
+                        <ThemedText style={{ fontSize: 12, color: tintColor, flex: 1, lineHeight: 18 }}>
+                          Pilih user yang boleh tambah/edit/hapus transaksi di buku kas ini. Super Admin selalu punya akses penuh.
+                        </ThemedText>
+                      </View>
+                      {profilesLoading ? (
+                        <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                          <ThemedText type="muted">Memuat daftar user...</ThemedText>
+                        </View>
+                      ) : allProfiles.length === 0 ? (
+                        <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                          <Ionicons name="people-outline" size={32} color={mutedColor} />
+                          <ThemedText type="muted" style={{ marginTop: 8 }}>Belum ada user terdaftar</ThemedText>
+                        </View>
+                      ) : (
+                        allProfiles
+                          .filter(p => p.role !== 'super_admin') // super admin tidak perlu ditampilkan
+                          .map(p => {
+                            const isEditor = (editBook?.editorIds ?? []).includes(p.id);
+                            const nama = p.nama_lengkap ?? p.email ?? '(tanpa nama)';
+                            const roleLabel = p.role === 'admin' ? 'Admin' : 'Member';
+                            return (
+                              <Pressable
+                                key={p.id}
+                                onPress={() => onToggleEditor(p.id)}
+                                style={({ pressed }) => [{
+                                  flexDirection: 'row' as const,
+                                  alignItems: 'center' as const,
+                                  borderRadius: 14,
+                                  borderWidth: 1.5,
+                                  borderColor: isEditor ? tintColor : borderColor,
+                                  backgroundColor: isEditor ? tintColor + '10' : 'transparent',
+                                  paddingHorizontal: 14,
+                                  paddingVertical: 10,
+                                  marginBottom: 8,
+                                  gap: 12,
+                                }, pressed && { opacity: 0.7 }]}>
+                                <View style={{
+                                  width: 36, height: 36, borderRadius: 10,
+                                  backgroundColor: isEditor ? tintColor : borderColor + '40',
+                                  justifyContent: 'center', alignItems: 'center',
+                                }}>
+                                  <ThemedText style={{ fontSize: 14, fontWeight: '700', color: isEditor ? 'white' : mutedColor }}>
+                                    {nama.charAt(0).toUpperCase()}
+                                  </ThemedText>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }} numberOfLines={1}>{nama}</ThemedText>
+                                  <ThemedText type="muted" style={{ fontSize: 11 }}>{roleLabel} · {p.email}</ThemedText>
+                                </View>
+                                <View style={{
+                                  width: 22, height: 22, borderRadius: 6, borderWidth: 2,
+                                  borderColor: isEditor ? tintColor : borderColor,
+                                  backgroundColor: isEditor ? tintColor : 'transparent',
+                                  justifyContent: 'center', alignItems: 'center',
+                                }}>
+                                  {isEditor && <Ionicons name="checkmark" size={13} color="white" />}
+                                </View>
+                              </Pressable>
+                            );
+                          })
+                      )}
+                    </View>
+                  )}
                 </View>
               )}
             </ScrollView>
@@ -595,12 +949,12 @@ export default function KelolaBukuKasScreen() {
               automaticallyAdjustKeyboardInsets>
               <View>
                 {/* Tipe selector */}
-                <View style={styles.typeSelector}>
-                  {(['STANDARD', 'PERIODIK'] as const).map(t => (
+                <View style={[styles.typeSelector, { flexWrap: 'wrap' }]}>
+                  {(['STANDARD', 'PERIODIK', 'KOLEKTIF'] as const).map(t => (
                     <Pressable key={t} onPress={() => setNewKasType(t)}
                       style={[styles.typeBtn, newKasType === t && { backgroundColor: tintColor, borderColor: tintColor }]}>
                       <ThemedText style={[styles.typeBtnText, newKasType === t && { color: 'white' }]}>
-                        {t === 'STANDARD' ? 'Standard' : 'Periodik (Iuran)'}
+                        {t === 'STANDARD' ? 'Standard' : t === 'PERIODIK' ? 'Periodik (Iuran)' : 'Kolektif (Patungan)'}
                       </ThemedText>
                     </Pressable>
                   ))}
@@ -613,6 +967,26 @@ export default function KelolaBukuKasScreen() {
                       { key: 'name', label: 'Nama', icon: 'text-outline' },
                       { key: 'members', label: 'Anggota', icon: 'people-outline' },
                       { key: 'rates', label: 'Kategori', icon: 'pricetags-outline' },
+                    ] as const).map(tab => {
+                      const isActive = addKasTab === tab.key;
+                      return (
+                        <Pressable key={tab.key} onPress={() => setAddKasTab(tab.key)}
+                          style={[styles.segmentBtn, isActive && { backgroundColor: tintColor }]}>
+                          <Ionicons name={tab.icon as any} size={13} color={isActive ? 'white' : mutedColor} />
+                          <ThemedText style={[styles.segmentText, { color: isActive ? 'white' : mutedColor }]}>{tab.label}</ThemedText>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+
+                {/* Segment tabs untuk KOLEKTIF */}
+                {newKasType === 'KOLEKTIF' && (
+                  <View style={[styles.segment, { marginHorizontal: 0, marginBottom: 20 }]}>
+                    {([
+                      { key: 'name', label: 'Nama', icon: 'text-outline' },
+                      { key: 'members', label: 'Anggota', icon: 'people-outline' },
+                      { key: 'rates', label: 'Item', icon: 'basket-outline' },
                     ] as const).map(tab => {
                       const isActive = addKasTab === tab.key;
                       return (
@@ -658,33 +1032,76 @@ export default function KelolaBukuKasScreen() {
                 {/* Tab Anggota (PERIODIK) */}
                 {newKasType === 'PERIODIK' && addKasTab === 'members' && (
                   <View>
-                    <ThemedText type="muted" style={styles.sectionLabel}>Anggota ({newKasMembers.length})</ThemedText>
-                    {newKasMembers.map((m, i) => (
-                      <View key={i} style={[styles.memberCard, { borderColor, backgroundColor: 'rgba(127,127,127,0.03)' }]}>
-                        <View style={[styles.memberAvatar, { backgroundColor: tintColor + '15' }]}>
-                          <ThemedText style={{ fontSize: 13, fontWeight: '700', color: tintColor }}>{m.charAt(0).toUpperCase()}</ThemedText>
-                        </View>
-                        <ThemedText style={[styles.memberEditInput, { color: textColor }]}>{m}</ThemedText>
-                        <Pressable onPress={() => setNewKasMembers(prev => prev.filter((_, idx) => idx !== i))}
-                          style={({ pressed }) => [styles.memberDeleteBtn, { backgroundColor: dangerColor + '12' }, pressed && { opacity: 0.6 }]}>
-                          <Ionicons name="trash-outline" size={16} color={dangerColor} />
-                        </Pressable>
+                    <ThemedText type="muted" style={styles.sectionLabel}>
+                      Daftar Anggota ({newKasMembers.length})
+                    </ThemedText>
+                    
+                    {/* Tombol Edit Anggota dengan Checklist */}
+                    <Pressable
+                      onPress={() => {
+                        setAddVisible(false);
+                        router.push({
+                          pathname: '/admin/edit-kas-members',
+                          params: { selectedMembers: JSON.stringify(newKasMembers) }
+                        });
+                      }}
+                      style={({ pressed }) => [
+                        styles.editMembersBtn,
+                        { backgroundColor: tintColor + '12', borderColor: tintColor },
+                        pressed && { opacity: 0.8 }
+                      ]}>
+                      <View style={[styles.editMembersBtnIcon, { backgroundColor: tintColor }]}>
+                        <Ionicons name="people" size={18} color="white" />
                       </View>
-                    ))}
-                    <View style={styles.addRow}>
-                      <TextInput
-                        value={newMemberInput}
-                        onChangeText={setNewMemberInput}
-                        placeholder="Nama anggota..."
-                        placeholderTextColor={mutedColor}
-                        style={[styles.addInput, { borderColor, color: textColor, backgroundColor: 'rgba(127,127,127,0.04)' }]}
-                      />
-                      <Pressable
-                        onPress={() => { if (newMemberInput.trim()) { setNewKasMembers(prev => [...prev, newMemberInput.trim()]); setNewMemberInput(''); } }}
-                        style={({ pressed }) => [styles.addActionBtn, { backgroundColor: tintColor }, pressed && { opacity: 0.8 }]}>
-                        <Ionicons name="person-add" size={20} color="white" />
-                      </Pressable>
-                    </View>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText type="defaultSemiBold" style={{ color: tintColor, fontSize: 15 }}>
+                          Edit Anggota
+                        </ThemedText>
+                        <ThemedText type="muted" style={{ fontSize: 12 }}>
+                          Pilih anggota dari daftar akun yang ada
+                        </ThemedText>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color={tintColor} />
+                    </Pressable>
+
+                    {/* Preview Anggota Saat Ini */}
+                    {newKasMembers.length === 0 ? (
+                      <View style={{ alignItems: 'center', paddingVertical: 20, gap: 8 }}>
+                        <Ionicons name="people-outline" size={32} color={mutedColor} />
+                        <ThemedText type="muted" style={{ fontSize: 13 }}>Belum ada anggota</ThemedText>
+                        <ThemedText type="muted" style={{ fontSize: 12, textAlign: 'center' }}>
+                          Gunakan tombol "Edit Anggota" di atas untuk menambahkan
+                        </ThemedText>
+                      </View>
+                    ) : (
+                      <View style={{ marginTop: 16 }}>
+                        <ThemedText type="muted" style={[styles.sectionLabel, { marginBottom: 8 }]}>
+                          Anggota Saat Ini
+                        </ThemedText>
+                        {newKasMembers.slice(0, 5).map((memberName, i) => (
+                          <View key={i} style={[styles.memberPreviewCard, { borderColor, backgroundColor: 'rgba(127,127,127,0.03)' }]}>
+                            <View style={[styles.memberAvatar, { backgroundColor: tintColor + '15' }]}>
+                              <ThemedText style={{ fontSize: 13, fontWeight: '700', color: tintColor }}>
+                                {memberName.charAt(0).toUpperCase()}
+                              </ThemedText>
+                            </View>
+                            <ThemedText style={{ color: textColor, fontSize: 14 }}>{memberName}</ThemedText>
+                          </View>
+                        ))}
+                        {newKasMembers.length > 5 && (
+                          <View style={[styles.memberPreviewCard, { borderColor, backgroundColor: 'rgba(127,127,127,0.03)' }]}>
+                            <View style={[styles.memberAvatar, { backgroundColor: mutedColor + '15' }]}>
+                              <ThemedText style={{ fontSize: 13, fontWeight: '700', color: mutedColor }}>
+                                +{newKasMembers.length - 5}
+                              </ThemedText>
+                            </View>
+                            <ThemedText style={{ color: mutedColor, fontSize: 14 }}>
+                              dan {newKasMembers.length - 5} anggota lainnya
+                            </ThemedText>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </View>
                 )}
 
@@ -730,6 +1147,106 @@ export default function KelolaBukuKasScreen() {
                           setNewKasCats(prev => [...prev, { name: addKasCatName.trim(), nominal: addKasCatNominal }]);
                           setAddKasCatName(''); setAddKasCatNominal('');
                           setTimeout(() => addKasCatNameRef.current?.focus(), 50);
+                        }}
+                        style={({ pressed }) => [styles.addActionBtn, { backgroundColor: tintColor }, pressed && { opacity: 0.8 }]}>
+                        <Ionicons name="add" size={22} color="white" />
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+
+                {/* Tab Anggota (KOLEKTIF) */}
+                {newKasType === 'KOLEKTIF' && addKasTab === 'members' && (
+                  <View>
+                    <ThemedText type="muted" style={styles.sectionLabel}>
+                      Daftar Anggota ({newKasMembers.length})
+                    </ThemedText>
+                    <Pressable
+                      onPress={() => {
+                        setAddVisible(false);
+                        router.push({
+                          pathname: '/admin/edit-kas-members',
+                          params: { selectedMembers: JSON.stringify(newKasMembers) }
+                        });
+                      }}
+                      style={({ pressed }) => [
+                        styles.editMembersBtn,
+                        { backgroundColor: tintColor + '12', borderColor: tintColor },
+                        pressed && { opacity: 0.8 }
+                      ]}>
+                      <View style={[styles.editMembersBtnIcon, { backgroundColor: tintColor }]}>
+                        <Ionicons name="people" size={18} color="white" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText type="defaultSemiBold" style={{ color: tintColor, fontSize: 15 }}>Edit Anggota</ThemedText>
+                        <ThemedText type="muted" style={{ fontSize: 12 }}>Pilih dari daftar akun</ThemedText>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color={tintColor} />
+                    </Pressable>
+                    {newKasMembers.length > 0 && (
+                      <View style={{ marginTop: 8, gap: 6 }}>
+                        {newKasMembers.slice(0, 4).map((n, i) => (
+                          <View key={i} style={[styles.memberPreviewCard, { borderColor, backgroundColor: 'rgba(127,127,127,0.03)' }]}>
+                            <View style={[styles.memberAvatar, { backgroundColor: tintColor + '15' }]}>
+                              <ThemedText style={{ fontSize: 13, fontWeight: '700', color: tintColor }}>{n.charAt(0).toUpperCase()}</ThemedText>
+                            </View>
+                            <ThemedText style={{ color: textColor, fontSize: 14 }}>{n}</ThemedText>
+                          </View>
+                        ))}
+                        {newKasMembers.length > 4 && (
+                          <ThemedText type="muted" style={{ fontSize: 12, textAlign: 'center' }}>+{newKasMembers.length - 4} lainnya</ThemedText>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* Tab Item (KOLEKTIF) */}
+                {newKasType === 'KOLEKTIF' && addKasTab === 'rates' && (
+                  <View>
+                    <ThemedText type="muted" style={styles.sectionLabel}>Item Kolektif</ThemedText>
+                    <View style={[styles.infoCard, { borderColor: tintColor + '40', backgroundColor: tintColor + '08' }]}>
+                      <Ionicons name="information-circle-outline" size={16} color={tintColor} />
+                      <ThemedText style={{ fontSize: 12, color: tintColor, flex: 1, lineHeight: 18 }}>
+                        Tambahkan item yang akan dikolektifkan beserta nominal per anggota. Contoh: Kaos Hitam - Rp75.000
+                      </ThemedText>
+                    </View>
+                    {newKasCats.map((cat, i) => (
+                      <View key={i} style={[styles.categoryCard, { borderColor }]}>
+                        <View style={[styles.categoryCardInner, { backgroundColor: 'rgba(127,127,127,0.03)' }]}>
+                          <View style={[styles.memberAvatar, { backgroundColor: tintColor + '12', marginRight: 0 }]}>
+                            <Ionicons name="basket" size={14} color={tintColor} />
+                          </View>
+                          <ThemedText style={[styles.categoryNameInput, { color: textColor }]}>{cat.name}</ThemedText>
+                          <ThemedText style={[styles.categoryNominalInput, { color: mutedColor }]}>{formatRupiah(parseInt(String(cat.nominal).replace(/\D/g, '') || '0', 10))}</ThemedText>
+                          <Pressable onPress={() => setNewKasCats(prev => prev.filter((_, idx) => idx !== i))}
+                            style={({ pressed }) => [styles.categoryDeleteBtn, { backgroundColor: dangerColor + '12' }, pressed && { opacity: 0.6 }]}>
+                            <Ionicons name="trash-outline" size={15} color={dangerColor} />
+                          </Pressable>
+                        </View>
+                      </View>
+                    ))}
+                    <View style={styles.addRow}>
+                      <TextInput
+                        value={addKasCatName}
+                        onChangeText={setAddKasCatName}
+                        placeholder="Nama item (e.g. Kaos)..."
+                        placeholderTextColor={mutedColor}
+                        style={[styles.addInput, { borderColor, color: textColor, backgroundColor: 'rgba(127,127,127,0.04)' }]}
+                      />
+                      <TextInput
+                        value={addKasCatNominal}
+                        onChangeText={setAddKasCatNominal}
+                        placeholder="Nominal"
+                        placeholderTextColor={mutedColor}
+                        keyboardType="number-pad"
+                        style={[styles.addInputSmall, { borderColor, color: textColor, backgroundColor: 'rgba(127,127,127,0.04)' }]}
+                      />
+                      <Pressable
+                        onPress={() => {
+                          if (!addKasCatName.trim()) return;
+                          setNewKasCats(prev => [...prev, { name: addKasCatName.trim(), nominal: addKasCatNominal }]);
+                          setAddKasCatName(''); setAddKasCatNominal('');
                         }}
                         style={({ pressed }) => [styles.addActionBtn, { backgroundColor: tintColor }, pressed && { opacity: 0.8 }]}>
                         <Ionicons name="add" size={22} color="white" />
