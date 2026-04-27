@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  scroll: { paddingBottom: 40 },
+  scroll: { paddingTop: 16, paddingBottom: 40 },
   card: {
     marginHorizontal: 20,
     padding: 20,
@@ -40,8 +40,8 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor }]} edges={['top']}>
+      <TabHeader title="Pengaturan" subtitle="Kelola akun dan preferensi aplikasi" style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 }} />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <TabHeader title="Pengaturan" style={{ paddingHorizontal: 20, paddingTop: 20, marginBottom: 16 }} />
 
         {/* Card Akun — navigasi ke halaman pengaturan akun */}
         <Pressable onPress={() => router.push('/admin/pengaturan-akun')} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
@@ -69,7 +69,10 @@ export default function AdminScreen() {
         {/* Card Tema Warna */}
         <Pressable onPress={() => router.push('/admin/pengaturan-tema')} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
           <ThemedView type="card" style={styles.card}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={[styles.avatarBox, { backgroundColor: accentColor + '20' }]}>
+                <Ionicons name="color-palette" size={22} color={accentColor} />
+              </View>
               <View style={{ flex: 1 }}>
                 <ThemedText type="defaultSemiBold" style={styles.cardTitle}>Tema Warna</ThemedText>
                 <ThemedText type="muted" style={styles.cardDesc}>Pilih warna aksen aplikasi.</ThemedText>
@@ -80,21 +83,37 @@ export default function AdminScreen() {
         </Pressable>
 
         {/* Card Kelola Akun Anggota — hanya admin */}
-        {isAdmin && (
+        {isAdmin ? (
           <Pressable onPress={() => router.push('/admin/kelola-anggota')} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
             <ThemedView type="card" style={styles.card}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={[styles.avatarBox, { backgroundColor: tintColor + '15' }]}>
+                  <Ionicons name="people" size={22} color={tintColor} />
+                </View>
                 <View style={{ flex: 1 }}>
-                  <ThemedText type="defaultSemiBold" style={styles.cardTitle}>Kelola Akun Anggota</ThemedText>
+                  <ThemedText type="defaultSemiBold" style={styles.cardTitle}>Kelola Anggota</ThemedText>
                   <ThemedText type="muted" style={styles.cardDesc}>Buat dan kelola akun anggota.</ThemedText>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={tintColor} />
               </View>
             </ThemedView>
           </Pressable>
+        ) : (
+          <Pressable onPress={() => router.push('/admin/daftar-anggota')} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
+            <ThemedView type="card" style={styles.card}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={[styles.avatarBox, { backgroundColor: tintColor + '15' }]}>
+                  <Ionicons name="people-outline" size={22} color={tintColor} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <ThemedText type="defaultSemiBold" style={styles.cardTitle}>Daftar Anggota</ThemedText>
+                  <ThemedText type="muted" style={styles.cardDesc}>Lihat daftar anggota terdaftar.</ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={tintColor} />
+              </View>
+            </ThemedView>
+          </Pressable>
         )}
-
-
 
       </ScrollView>
     </SafeAreaView>

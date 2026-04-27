@@ -245,15 +245,14 @@ export default function KasDetailReportScreen() {
           <ThemedText style={{ color: tintColor, fontSize: 16 }}>Kembali</ThemedText>
         </Pressable>
         <ThemedText type="defaultSemiBold" style={s.headerTitle} numberOfLines={1}>
-          Laporan
+          Laporan Keuangan
         </ThemedText>
         <View style={{ width: 80 }} />
       </View>
 
       <ScrollView contentContainerStyle={s.scroll}>
         <View style={s.pageHeader}>
-          <ThemedText type="title">Laporan Keuangan</ThemedText>
-          <ThemedText type="muted">{book?.nama ?? ''}</ThemedText>
+          <ThemedText type="defaultSemiBold" style={{ textAlign: 'center', fontSize: 18, fontWeight: '700' }}>{book?.nama ?? ''}</ThemedText>
         </View>
 
         <View style={s.headerPadding}>

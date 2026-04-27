@@ -8,15 +8,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -55,6 +55,7 @@ export default function KelolaAnggotaScreen() {
   const [changeRoleTarget, setChangeRoleTarget] = useState<MemberAccount | null>(null);
   const [newRole, setNewRole] = useState<'admin' | 'member'>('member');
   const [changingRole, setChangingRole] = useState(false);
+  const [roleSuccessData, setRoleSuccessData] = useState<{ nama: string; role: string } | null>(null);
 
   // Sort
   type SortBy = 'role' | 'nama' | 'email';
@@ -237,7 +238,10 @@ export default function KelolaAnggotaScreen() {
       
       if (error) throw new Error(error.message);
       
-      Alert.alert('Berhasil', `Role ${changeRoleTarget.nama_lengkap} berhasil diubah menjadi ${newRole === 'admin' ? 'Admin' : 'Member'}.`);
+      setRoleSuccessData({
+        nama: changeRoleTarget.nama_lengkap ?? changeRoleTarget.email,
+        role: newRole === 'admin' ? 'Admin' : 'Member',
+      });
       setChangeRoleTarget(null);
       fetchMembers();
     } catch (e: any) {
@@ -597,6 +601,31 @@ export default function KelolaAnggotaScreen() {
                 <ThemedText type="defaultSemiBold" style={styles.btnText}>Hapus</ThemedText>
               </Pressable>
             </View>
+          </ThemedView>
+        </View>
+      </Modal>
+
+      {/* Modal Sukses Ganti Role */}
+      <Modal visible={!!roleSuccessData} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setRoleSuccessData(null)} />
+          <ThemedView type="card" style={[styles.modalCard, { width: '92%', alignItems: 'center' }]}>
+            <View style={[styles.modalIcon, { backgroundColor: tintColor + '15' }]}>
+              <Ionicons name="shield-checkmark" size={28} color={tintColor} />
+            </View>
+            <ThemedText type="defaultSemiBold" style={[styles.modalTitle, { textAlign: 'center' }]}>
+              Role Berhasil Diubah
+            </ThemedText>
+            <ThemedText type="muted" style={[styles.modalSub, { textAlign: 'center', marginTop: 6, marginBottom: 24 }]}>
+              <ThemedText type="defaultSemiBold">{roleSuccessData?.nama}</ThemedText>
+              {' '}sekarang menjadi{' '}
+              <ThemedText type="defaultSemiBold" style={{ color: tintColor }}>{roleSuccessData?.role}</ThemedText>.
+            </ThemedText>
+            <Pressable
+              onPress={() => setRoleSuccessData(null)}
+              style={({ pressed }) => [styles.btn, { backgroundColor: tintColor, width: '100%', opacity: pressed ? 0.8 : 1 }]}>
+              <ThemedText type="defaultSemiBold" style={styles.btnText}>Oke</ThemedText>
+            </Pressable>
           </ThemedView>
         </View>
       </Modal>

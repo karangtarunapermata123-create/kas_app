@@ -303,11 +303,12 @@ export default function UndianScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
+      <TabHeader
+        title="Undian"
+        subtitle={isAdmin ? 'Kelola sesi undian arisan' : 'Lihat hasil undian'}
+        style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 }}
+      />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <TabHeader
-          title="Undian"
-          subtitle={isAdmin ? 'Kelola sesi undian arisan' : 'Lihat hasil undian'}
-        />
 
         {/* Daftar Sesi */}
         <View>
@@ -541,7 +542,7 @@ export default function UndianScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 20, paddingBottom: 40, gap: 16 },
+  scroll: { padding: 20, paddingTop: 12, paddingBottom: 40, gap: 16 },
   card: { borderRadius: 20, padding: 20, borderWidth: 1 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   addBtn: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },

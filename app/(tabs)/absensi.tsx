@@ -201,11 +201,12 @@ export default function AbsensiScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
+      <TabHeader
+        title="Absensi"
+        subtitle={isAdmin ? 'Kelola kegiatan dan absensi' : 'Scan QR untuk absen'}
+        style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 }}
+      />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <TabHeader
-          title="Absensi"
-          subtitle={isAdmin ? 'Kelola kegiatan dan absensi' : 'Scan QR untuk absen'}
-        />
 
         {/* Scan button untuk member */}
         {!isAdmin && (
@@ -736,7 +737,7 @@ export default function AbsensiScreen() {
 
 const styles = StyleSheet.create({
    safe: { flex: 1 },
-   scroll: { padding: 20, paddingBottom: 40, gap: 16 },
+   scroll: { padding: 20, paddingTop: 12, paddingBottom: 40, gap: 16 },
    card: { borderRadius: 20, padding: 20 },
    roleBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, marginTop: 4 },
    cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

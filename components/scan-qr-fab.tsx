@@ -1,3 +1,5 @@
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { WebQrScanner } from '@/components/web-qr-scanner';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAbsensi } from '@/lib/absensi/absensi-context';
@@ -7,27 +9,28 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useCallback, useRef, useState } from 'react';
 import { Alert, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ThemedText } from './themed-text';
 
 type Props = {
-  /** Posisi bottom dari bawah layar, default 24 */
   bottom?: number;
-  /** Posisi right, default 24 */
   right?: number;
 };
 
-/**
- * FAB tombol scan QR untuk admin — bisa dipakai di semua halaman dalam flow Absensi.
- * Hanya muncul kalau user adalah admin.
- */
 export function ScanQrFab({ bottom = 24, right = 24 }: Props) {
   const { isAdmin, session, namaLengkap } = useAdmin();
-  const { absen } = useAbsensi();
+  const { absen, events, sessions } = useAbsensi();
   const tintColor = useThemeColor({}, 'tint');
+  const successColor = (useThemeColor({}, 'success') as string | undefined) ?? '#22c55e';
 
   const [scanVisible, setScanVisible] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const scannedRef = useRef(false);
+
+  const [scanSuccessVisible, setScanSuccessVisible] = useState(false);
+  const [scanSuccessData, setScanSuccessData] = useState<{
+    eventName: string;
+    sessionLabel: string;
+    userName: string;
+  } | null>(null);
 
   const onScan = useCallback(async () => {
     if (Platform.OS !== 'web') {
@@ -50,11 +53,19 @@ export function ScanQrFab({ bottom = 24, right = 24 }: Props) {
       const userId = session?.user?.id ?? 'guest';
       const namaUser = namaLengkap ?? session?.user?.email ?? 'Pengguna';
       await absen(parsed.eventId, parsed.sessionId, userId, namaUser);
-      Alert.alert('Berhasil', 'Absensi berhasil dicatat!');
+
+      const event = events.find(e => e.id === parsed.eventId);
+      const sessionInfo = sessions.find(s => s.id === parsed.sessionId);
+      setScanSuccessData({
+        eventName: event?.nama || 'Kegiatan',
+        sessionLabel: sessionInfo?.label || 'Sesi',
+        userName: namaUser,
+      });
+      setScanSuccessVisible(true);
     } catch (e: any) {
       Alert.alert('Gagal', e.message || 'QR tidak valid.');
     }
-  }, [session, namaLengkap, absen]);
+  }, [session, namaLengkap, absen, events, sessions]);
 
   if (!isAdmin) return null;
 
@@ -102,6 +113,43 @@ export function ScanQrFab({ bottom = 24, right = 24 }: Props) {
           </View>
         </Modal>
       )}
+
+      {/* Modal Berhasil Scan QR */}
+      <Modal visible={scanSuccessVisible} transparent animationType="fade">
+        <View style={styles.qrOverlay}>
+          <ThemedView type="card" style={[styles.qrCard, { alignItems: 'center' }]}>
+            <View style={{ backgroundColor: successColor + '18', marginBottom: 20, width: 64, height: 64, borderRadius: 20, justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="checkmark-circle" size={32} color={successColor} />
+            </View>
+
+            <ThemedText type="defaultSemiBold" style={{ fontSize: 20, textAlign: 'center', marginBottom: 8 }}>
+              Absensi Berhasil!
+            </ThemedText>
+
+            <ThemedText style={{ fontSize: 16, fontWeight: '600', textAlign: 'center', marginBottom: 4, color: successColor }}>
+              {scanSuccessData?.userName}
+            </ThemedText>
+
+            <ThemedText type="muted" style={{ fontSize: 14, textAlign: 'center', marginBottom: 6 }}>
+              {scanSuccessData?.eventName}
+            </ThemedText>
+
+            <ThemedText type="muted" style={{ fontSize: 13, textAlign: 'center', marginBottom: 24 }}>
+              {scanSuccessData?.sessionLabel}
+            </ThemedText>
+
+            <Pressable
+              onPress={() => { setScanSuccessVisible(false); setScanSuccessData(null); }}
+              style={({ pressed }) => [
+                styles.closeBtn,
+                { backgroundColor: successColor },
+                pressed && { opacity: 0.8 },
+              ]}>
+              <ThemedText style={{ color: 'white', fontWeight: '700', fontSize: 15 }}>Tutup</ThemedText>
+            </Pressable>
+          </ThemedView>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -141,5 +189,25 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.2)',
     paddingHorizontal: 32,
+  },
+  qrOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: 24,
+  },
+  qrCard: {
+    borderRadius: 24,
+    padding: 28,
+    width: '100%',
+    maxWidth: 400,
+  },
+  closeBtn: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 16,
   },
 });

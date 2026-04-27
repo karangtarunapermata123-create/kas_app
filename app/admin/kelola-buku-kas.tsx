@@ -175,6 +175,8 @@ export default function KelolaBukuKasScreen() {
   const [newKolektifItemName, setNewKolektifItemName] = useState('');
   const [newKolektifItemNominal, setNewKolektifItemNominal] = useState('');
   const newKolektifItemNameRef = useRef<TextInput>(null);
+  const [deleteKolektifItemTarget, setDeleteKolektifItemTarget] = useState<{ id: string; nama: string } | null>(null);
+  const [deletingKolektifItem, setDeletingKolektifItem] = useState(false);
 
   const onAddKolektifItem = useCallback(async () => {
     if (!editBookId || !editBook) return;
@@ -193,11 +195,17 @@ export default function KelolaBukuKasScreen() {
     setTimeout(() => newKolektifItemNameRef.current?.focus(), 50);
   }, [editBookId, editBook, newKolektifItemName, newKolektifItemNominal, updateKolektifItems]);
 
-  const onRemoveKolektifItem = useCallback(async (itemId: string) => {
-    if (!editBookId || !editBook) return;
-    const next = (editBook.kolektifItems || []).filter(i => i.id !== itemId);
-    await updateKolektifItems(editBookId, next);
-  }, [editBookId, editBook, updateKolektifItems]);
+  const onRemoveKolektifItem = useCallback(async () => {
+    if (!editBookId || !editBook || !deleteKolektifItemTarget) return;
+    setDeletingKolektifItem(true);
+    try {
+      const next = (editBook.kolektifItems || []).filter(i => i.id !== deleteKolektifItemTarget.id);
+      await updateKolektifItems(editBookId, next);
+      setDeleteKolektifItemTarget(null);
+    } finally {
+      setDeletingKolektifItem(false);
+    }
+  }, [editBookId, editBook, deleteKolektifItemTarget, updateKolektifItems]);
 
   // ── Editor Access ──
   const [allProfiles, setAllProfiles] = useState<{ id: string; nama_lengkap: string | null; email: string | null; role: string }[]>([]);
@@ -806,7 +814,7 @@ export default function KelolaBukuKasScreen() {
                               <ThemedText style={[styles.categoryNameInput, { color: textColor }]}>{item.nama}</ThemedText>
                               <ThemedText style={[styles.categoryNominalInput, { color: mutedColor }]}>{formatRupiah(item.nominal)}</ThemedText>
                               <Pressable
-                                onPress={() => onRemoveKolektifItem(item.id)}
+                                onPress={() => setDeleteKolektifItemTarget({ id: item.id, nama: item.nama })}
                                 style={({ pressed }) => [styles.categoryDeleteBtn, { backgroundColor: dangerColor + '12' }, pressed && { opacity: 0.6 }]}>
                                 <Ionicons name="trash-outline" size={15} color={dangerColor} />
                               </Pressable>
@@ -1294,6 +1302,41 @@ export default function KelolaBukuKasScreen() {
           </ThemedView>
         </View>
       </Modal>
+
+      {/* ── Modal Konfirmasi Hapus Item Kolektif ── */}
+      <Modal visible={!!deleteKolektifItemTarget} transparent animationType="fade">
+        <View style={styles.modalCenterWrap}>
+          <Pressable style={[styles.modalOverlay, { position: 'absolute' }]} onPress={() => setDeleteKolektifItemTarget(null)} />
+          <ThemedView type="card" style={{ width: isLandscape ? '70%' : '92%', padding: 24, borderRadius: 28 }}>
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <View style={[styles.modalIconBox, { width: 64, height: 64, borderRadius: 32, backgroundColor: dangerColor + '15', marginBottom: 16 }]}>
+                <Ionicons name="trash-outline" size={32} color={dangerColor} />
+              </View>
+              <ThemedText type="defaultSemiBold" style={{ fontSize: 18, marginBottom: 8, textAlign: 'center' }}>Hapus Item?</ThemedText>
+              <ThemedText type="muted" style={{ textAlign: 'center', fontSize: 14, lineHeight: 20 }}>
+                Item <ThemedText type="defaultSemiBold">"{deleteKolektifItemTarget?.nama}"</ThemedText> akan dihapus beserta semua data setoran anggota untuk item ini.
+              </ThemedText>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Pressable
+                onPress={() => setDeleteKolektifItemTarget(null)}
+                disabled={deletingKolektifItem}
+                style={({ pressed }) => [styles.btn, { flex: 1, borderWidth: 1, borderColor, backgroundColor: 'transparent', opacity: pressed ? 0.7 : 1 }]}>
+                <ThemedText type="defaultSemiBold" style={{ color: textColor }}>Batal</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={onRemoveKolektifItem}
+                disabled={deletingKolektifItem}
+                style={({ pressed }) => [styles.btn, { flex: 1, backgroundColor: dangerColor, opacity: (pressed || deletingKolektifItem) ? 0.7 : 1 }]}>
+                <ThemedText type="defaultSemiBold" style={styles.btnText}>
+                  {deletingKolektifItem ? 'Menghapus...' : 'Hapus'}
+                </ThemedText>
+              </Pressable>
+            </View>
+          </ThemedView>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
