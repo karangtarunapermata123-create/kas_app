@@ -1,20 +1,20 @@
+import { useColorSchemeOverride } from '@/hooks/use-color-scheme-override';
 import { useEffect, useState } from 'react';
-import { useColorScheme as useRNColorScheme } from 'react-native';
 
 /**
- * To support static rendering, this value needs to be re-calculated on the client side for web
+ * Web version: supports static rendering hydration while also
+ * respecting the user's color scheme override (light/dark/system).
  */
-export function useColorScheme() {
+export function useColorScheme(): 'light' | 'dark' {
   const [hasHydrated, setHasHydrated] = useState(false);
+  const { resolved } = useColorSchemeOverride();
 
   useEffect(() => {
     setHasHydrated(true);
   }, []);
 
-  const colorScheme = useRNColorScheme();
-
   if (hasHydrated) {
-    return colorScheme;
+    return resolved;
   }
 
   return 'light';

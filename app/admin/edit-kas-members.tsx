@@ -82,6 +82,15 @@ export default function EditKasMembersScreen() {
   const selectAll = useCallback(() => setSelected(new Set(profiles.map(p => p.id))), [profiles]);
   const clearAll = useCallback(() => setSelected(new Set()), []);
 
+  const onBack = useCallback(() => {
+    if (mode === 'add') {
+      const selectedProfiles = profiles.filter(p => selected.has(p.id));
+      const selectedNames = selectedProfiles.map(p => p.nama_lengkap || p.email || '');
+      setPendingMembers(selectedNames, 'add', kasId);
+    }
+    router.back();
+  }, [mode, profiles, selected, kasId]);
+
   const onSave = useCallback(() => {
     const selectedProfiles = profiles.filter(p => selected.has(p.id));
     const selectedNames = selectedProfiles.map(p => p.nama_lengkap || p.email || '');
@@ -95,7 +104,7 @@ export default function EditKasMembersScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: borderColor }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={onBack} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={tintColor} />
           <ThemedText style={{ color: tintColor, fontSize: 16 }}>Kembali</ThemedText>
         </Pressable>

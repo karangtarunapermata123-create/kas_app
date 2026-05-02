@@ -13,8 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 type Profile = { id: string; nama_lengkap: string | null; email: string | null };
 
 export default function EditKasMembersScreen() {
-  const { id: kasId } = useLocalSearchParams<{ id: string }>();
-  const { books, addMember, removeMember } = useKas();
+  const { id: kasId, sessionId } = useLocalSearchParams<{ id: string; sessionId?: string }>();
+  const { books, addMember, removeMember, updatePeriodConfig } = useKas();
   
   const tintColor = useThemeColor({}, 'tint');
   const backgroundColor = useThemeColor({}, 'background');
@@ -29,6 +29,13 @@ export default function EditKasMembersScreen() {
   const [saving, setSaving] = useState(false);
 
   const book = books.find(b => b.id === kasId);
+  const isSessionBook = book?.tipe === 'PERIODIK' && book?.periodConfig?.tipe === 'SESSION';
+  const sessions = (isSessionBook ? (book?.periodConfig?.sessions ?? []) : []) as any[];
+  const targetSessionId = isSessionBook ? (sessionId ?? book?.periodConfig?.activeSessionId ?? sessions?.[0]?.id) : undefined;
+  const targetSession = isSessionBook && targetSessionId ? sessions.find(s => s.id === targetSessionId) : null;
+  const currentMembers = isSessionBook
+    ? ((targetSession as any)?.members ?? book?.members ?? [])
+    : (book?.members ?? []);
 
   useEffect(() => {
     if (!kasId || !book) return;
@@ -48,7 +55,7 @@ export default function EditKasMembersScreen() {
           setProfiles(profileRes.data as Profile[]);
           
           // Set selected members based on current book members
-          const currentMemberNames = new Set((book.members || []).map(m => m.nama));
+          const currentMemberNames = new Set((currentMembers || []).map((m: any) => m.nama));
           const selectedIds = new Set<string>();
           
           profileRes.data.forEach((profile: Profile) => {
@@ -67,7 +74,7 @@ export default function EditKasMembersScreen() {
       }
     })();
     return () => { cancelled = true; };
-  }, [kasId, book]);
+  }, [kasId, book, currentMembers]);
 
   const toggleMember = useCallback((userId: string) => {
     setSelected(prev => {
@@ -86,34 +93,68 @@ export default function EditKasMembersScreen() {
     
     setSaving(true);
     try {
-      // Get current members
-      const currentMemberNames = new Set((book.members || []).map(m => m.nama));
-      
       // Get selected profile names
       const selectedProfiles = profiles.filter(p => selected.has(p.id));
-      const selectedNames = new Set(selectedProfiles.map(p => p.nama_lengkap || p.email || ''));
-      
-      // Determine members to add and remove
-      const toAdd = Array.from(selectedNames).filter(name => !currentMemberNames.has(name));
-      const toRemove = (book.members || []).filter(m => !selectedNames.has(m.nama));
-      
-      // Remove members
-      for (const member of toRemove) {
-        await removeMember(kasId, member.id);
-      }
-      
-      // Add new members
-      for (const name of toAdd) {
-        await addMember(kasId, name);
+
+      if (isSessionBook) {
+        if (!targetSessionId) throw new Error('Sesi tidak ditemukan.');
+
+        const selectedNames = selectedProfiles.map(p => p.nama_lengkap || p.email || '');
+        const nameToId = new Map<string, string>();
+
+        (currentMembers || []).forEach((m: any) => {
+          if (m?.nama && m?.id) nameToId.set(m.nama, m.id);
+        });
+        (book.members || []).forEach((m: any) => {
+          if (m?.nama && m?.id && !nameToId.has(m.nama)) nameToId.set(m.nama, m.id);
+        });
+
+        const nextMembers = selectedNames
+          .filter(Boolean)
+          .map((nama) => ({ id: nameToId.get(nama) ?? `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, nama }));
+
+        const now = Date.now();
+        const nextSessions = (book.periodConfig?.sessions ?? []).map((s: any) =>
+          s.id === targetSessionId ? { ...s, members: nextMembers, putaranCount: nextMembers.length, updatedAt: now } : s,
+        );
+        await updatePeriodConfig(kasId, {
+          tipe: 'SESSION',
+          nominal: book.periodConfig?.nominal ?? 0,
+          activeSessionId: book.periodConfig?.activeSessionId ?? targetSessionId,
+          sessions: nextSessions,
+        });
+      } else {
+        // Get current members
+        const currentMemberNames = new Set((book.members || []).map(m => m.nama));
+
+        const selectedNames = new Set(selectedProfiles.map(p => p.nama_lengkap || p.email || ''));
+
+        // Determine members to add and remove
+        const toAdd = Array.from(selectedNames).filter(name => !currentMemberNames.has(name));
+        const toRemove = (book.members || []).filter(m => !selectedNames.has(m.nama));
+
+        // Remove members
+        for (const member of toRemove) {
+          await removeMember(kasId, member.id);
+        }
+
+        // Add new members
+        for (const name of toAdd) {
+          await addMember(kasId, name);
+        }
       }
 
-      router.back();
+      if (isSessionBook) {
+        router.replace({ pathname: `/kas-detail/${kasId}`, params: { manageSess: 'true' } });
+      } else {
+        router.back();
+      }
     } catch (e: any) {
       Alert.alert('Gagal', e.message ?? 'Gagal menyimpan.');
     } finally {
       setSaving(false);
     }
-  }, [kasId, book, profiles, selected, addMember, removeMember]);
+  }, [kasId, book, profiles, selected, addMember, removeMember, updatePeriodConfig, currentMembers, isSessionBook, targetSessionId]);
 
   const allSelected = profiles.length > 0 && selected.size === profiles.length;
 
@@ -141,12 +182,23 @@ export default function EditKasMembersScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={['top']}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: borderColor }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable 
+          onPress={() => {
+            if (isSessionBook) {
+              router.replace({ pathname: `/kas-detail/${kasId}`, params: { manageSess: 'true' } });
+            } else {
+              router.back();
+            }
+          }} 
+          style={styles.backBtn}
+        >
           <Ionicons name="chevron-back" size={24} color={tintColor} />
           <ThemedText style={{ color: tintColor, fontSize: 16 }}>Kembali</ThemedText>
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>Edit Anggota</ThemedText>
+          <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>
+            {isSessionBook ? (targetSession ? `Anggota: ${targetSession.nama}` : 'Edit Anggota Sesi') : 'Edit Anggota'}
+          </ThemedText>
           <ThemedText type="muted" style={{ fontSize: 12 }}>{book.nama}</ThemedText>
         </View>
         <Pressable

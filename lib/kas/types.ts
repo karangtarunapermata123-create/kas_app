@@ -1,7 +1,19 @@
-export type KasTxType = 'MASUK' | 'KELUAR';
+export type KasTxType = "MASUK" | "KELUAR";
 
-export type KasBookType = 'STANDARD' | 'PERIODIK' | 'KOLEKTIF';
-export type PeriodType = 'MONTHLY' | 'WEEKLY';
+export type KasBookType = "STANDARD" | "PERIODIK" | "KOLEKTIF";
+export type PeriodType = "MONTHLY" | "WEEKLY" | "SESSION";
+
+export type KasSession = {
+  id: string;
+  nama: string;
+  order: number;
+  putaranCount?: number;
+  members?: KasMember[];
+  categories?: string[];
+  periodRates?: Record<string, number>;
+  createdAt: number;
+  updatedAt: number;
+};
 
 export type KasMember = {
   id: string;
@@ -9,9 +21,9 @@ export type KasMember = {
 };
 
 export type KolektifItem = {
-  id: string;       // unique id item
-  nama: string;     // nama item, e.g. "Kaos Hitam"
-  nominal: number;  // target setor per anggota
+  id: string; // unique id item
+  nama: string; // nama item, e.g. "Kaos Hitam"
+  nominal: number; // target setor per anggota
 };
 
 export type KasBook = {
@@ -21,11 +33,15 @@ export type KasBook = {
   periodConfig?: {
     tipe: PeriodType;
     nominal: number;
+    sessions?: KasSession[];
+    activeSessionId?: string;
   };
   periodRates?: Record<string, number>;
   members?: KasMember[];
   categories?: string[];
   kolektifItems?: KolektifItem[]; // item-item untuk buku kolektif
+  kolektifMode?: "STANDARD" | "BULANAN";
+  kolektifTahun?: number;
   editorIds?: string[];
   createdAt: number;
   updatedAt: number;
@@ -59,14 +75,16 @@ export type KasState = {
 
 export function formatRupiah(value: number): string {
   try {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
+    return new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
       maximumFractionDigits: 0,
     }).format(value);
   } catch {
     // Fallback for environments missing Intl
-    return `Rp ${Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
+    return `Rp ${Math.round(value)
+      .toString()
+      .replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
   }
 }
 
@@ -76,16 +94,20 @@ export function normalizeTanggalISO(input: string): string {
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   const d = new Date();
   const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
-export function computeSaldo(txs: KasTx[]): { masuk: number; keluar: number; saldo: number } {
+export function computeSaldo(txs: KasTx[]): {
+  masuk: number;
+  keluar: number;
+  saldo: number;
+} {
   let masuk = 0;
   let keluar = 0;
   for (const t of txs) {
-    if (t.jenis === 'MASUK') masuk += t.nominal;
+    if (t.jenis === "MASUK") masuk += t.nominal;
     else keluar += t.nominal;
   }
   return { masuk, keluar, saldo: masuk - keluar };
